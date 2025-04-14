@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 
 def plot_episode_data(filename):
     """
-    读取 JSON 文件并可视化每个 step 的信息，包括全局 state。
+    读取 JSON 文件并可视化每个 step 的信息，包括全局 state
     """
     # 读取 JSON 文件
     with open(filename, 'r') as f:
