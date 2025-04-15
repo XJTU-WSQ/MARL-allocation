@@ -1,13 +1,23 @@
-import numpy as np
 import os
+import sys
+import numpy as np
+from datetime import datetime
+from loguru import logger
+from concurrent.futures import ThreadPoolExecutor
+
+
 from torch.utils.tensorboard import SummaryWriter
 from common.rollout import RolloutWorker
 from agent.agent import Agents
 from common.replay_buffer import ReplayBuffer
-import sys
 from policy.qmix import QMIX
-from datetime import datetime
+from utils.util import timer
 
+
+# 配置日志文件路径，包含当前日期
+current_date = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+log_file_path = f"logs/log_{current_date}.log"
+logger.add(log_file_path, rotation="00:00", retention="10 days", level="INFO")
 
 class Runner:
     def __init__(self, env, args):
@@ -26,7 +36,7 @@ class Runner:
         if not os.path.exists(self.save_path):
             os.makedirs(self.save_path)
 
-    def run(self):
+    def run(self, generate_episode_type='parallel'):
         train_steps = 0
         for epoch in range(self.args.n_epoch):
             # 显示输出
@@ -46,21 +56,39 @@ class Runner:
             total_completed_tasks = []
             total_completion_rates = []
             episodes = []
-
-            for _ in range(self.args.n_episodes):
-                episode, episode_reward, terminated, episode_stats = self.rolloutWorker.generate_episode(epoch)
-
-                # 累加统计量
-                episodes.append(episode)
-                epoch_rewards.append(episode_reward)
-                concurrent_rewards.append(episode_stats["concurrent_rewards"])
-                conflict_penalties.append(episode_stats["conflict_penalty"])
-                wait_penalties.append(episode_stats["wait_penalty"])
-                service_cost_penalties.append(episode_stats["service_cost_penalty"])
-                total_conflicts.append(episode_stats["conflicts"])
-                total_wait_times.append(episode_stats["wait_time"])
-                total_completed_tasks.append(episode_stats["completed_tasks"])
-                total_completion_rates.append(episode_stats["completion_rate"])
+            with timer(f'generate_episode with n_episodes={self.args.n_episodes}'):
+                if generate_episode_type == 'origin':
+                    for _ in range(self.args.n_episodes):
+                        episode, episode_reward, terminated, episode_stats = self.rolloutWorker.generate_episode(epoch)
+                        # 累加统计量
+                        episodes.append(episode)
+                        epoch_rewards.append(episode_reward)
+                        concurrent_rewards.append(episode_stats["concurrent_rewards"])
+                        conflict_penalties.append(episode_stats["conflict_penalty"])
+                        wait_penalties.append(episode_stats["wait_penalty"])
+                        service_cost_penalties.append(episode_stats["service_cost_penalty"])
+                        total_conflicts.append(episode_stats["conflicts"])
+                        total_wait_times.append(episode_stats["wait_time"])
+                        total_completed_tasks.append(episode_stats["completed_tasks"])
+                        total_completion_rates.append(episode_stats["completion_rate"])
+                elif generate_episode_type == 'parallel':
+                    with ThreadPoolExecutor(max_workers=self.args.n_episodes) as executor:
+                        futures = [executor.submit(self.rolloutWorker.generate_episode) for _ in range(self.args.n_episodes)]
+                        results = [future.result() for future in futures]
+                        for result in results:
+                            episode = result[0]
+                            episode_reward = result[1]
+                            episode_stats = result[-1]
+                            episodes.append(episode)
+                            epoch_rewards.append(episode_reward)
+                            concurrent_rewards.append(episode_stats["concurrent_rewards"])
+                            conflict_penalties.append(episode_stats["conflict_penalty"])
+                            wait_penalties.append(episode_stats["wait_penalty"])
+                            service_cost_penalties.append(episode_stats["service_cost_penalty"])
+                            total_conflicts.append(episode_stats["conflicts"])
+                            total_wait_times.append(episode_stats["wait_time"])
+                            total_completed_tasks.append(episode_stats["completed_tasks"])
+                            total_completion_rates.append(episode_stats["completion_rate"])
 
             avg_conflicts = np.mean(total_conflicts)
             avg_wait_time = np.mean(total_wait_times)
@@ -123,14 +151,15 @@ class Runner:
             # 保存 episode 到缓冲区
             self.buffer.store_episode(episode_batch)
 
-            print(f"\nEpoch {epoch}:")
-            print(f"  Average Reward: {avg_reward:.2f}")
-            print(f"  Average Wait_time: {avg_wait_time:.2f}")
-
+            logger.info(f"Epoch {epoch}: Average Reward={avg_reward:.2f}, Average Wait_time={avg_wait_time:.2f}, \
+                        Estimated Wait_time per_task={avg_wait_time/avg_completed_tasks:.2f}")
             # 执行训练步骤
+            
             for train_step in range(self.args.train_steps):
+                logger.info(f" buffer size={self.buffer.current_size:.2f}, batch_size={self.args.batch_size:.2f}")
                 mini_batch = self.buffer.sample(min(self.buffer.current_size, self.args.batch_size))
-                self.agents.train(mini_batch, train_steps)
+                with timer(f'train with train_steps={self.args.train_steps}'):
+                    self.agents.train(mini_batch, train_steps)
                 train_steps += 1
 
         self.writer.close()
