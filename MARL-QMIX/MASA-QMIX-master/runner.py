@@ -55,6 +55,7 @@ class Runner:
             total_wait_times = []
             total_completed_tasks = []
             total_completion_rates = []
+            total_epsilon_value = []
             episodes = []
             with timer(f'generate_episode with n_episodes={self.args.n_episodes}'):
                 if generate_episode_type == 'origin':
@@ -71,6 +72,7 @@ class Runner:
                         total_wait_times.append(episode_stats["wait_time"])
                         total_completed_tasks.append(episode_stats["completed_tasks"])
                         total_completion_rates.append(episode_stats["completion_rate"])
+                        total_epsilon_value.append(episode_stats["epsilon_value"])
                 elif generate_episode_type == 'parallel':
                     with ThreadPoolExecutor(max_workers=self.args.n_episodes) as executor:
                         futures = [executor.submit(self.rolloutWorker.generate_episode) for _ in range(self.args.n_episodes)]
@@ -89,11 +91,13 @@ class Runner:
                             total_wait_times.append(episode_stats["wait_time"])
                             total_completed_tasks.append(episode_stats["completed_tasks"])
                             total_completion_rates.append(episode_stats["completion_rate"])
+                            total_epsilon_value.append(episode_stats["epsilon_value"])
 
             avg_conflicts = np.mean(total_conflicts)
             avg_wait_time = np.mean(total_wait_times)
             avg_completed_tasks = np.mean(total_completed_tasks)
             avg_completion_rate = np.mean(total_completion_rates)
+            avg_epsilon_value = np.mean(total_epsilon_value)
 
             # Compute statistics for this epoch
             avg_reward = np.mean(epoch_rewards)
@@ -121,6 +125,7 @@ class Runner:
             self.writer.add_scalar("Train/Wait Time", avg_wait_time, epoch)
             self.writer.add_scalar("Train/Completed Tasks", avg_completed_tasks, epoch)
             self.writer.add_scalar("Train/Completion Rate", avg_completion_rate, epoch)
+            self.writer.add_scalar("Train/Epsilon Value", avg_epsilon_value, epoch)
 
             self.writer.add_scalar("Train/Average Reward", avg_reward, epoch)
             self.writer.add_scalar("Train/Max Reward", max_reward, epoch)
