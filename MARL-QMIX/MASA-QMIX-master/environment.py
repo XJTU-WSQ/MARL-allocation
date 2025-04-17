@@ -17,6 +17,11 @@ class ScheduleEnv(gym.Env, ABC):
         self.tasks = Tasks()
         # 机器人状态信息 : 1占用，0空闲
         self.robots_state = [0 for _ in range(self.robots.num_robots)]
+        # 奖励函数的权重
+        self.concurrent_reward_weight = 5.5
+        self.wait_penalty_weight = -0.1  # 等待一个任务就进行一个惩罚
+        self.service_cost_penalty_weight = -0.01  # 服务成本惩罚的权重
+        self.conflict_penalty_weight = -1
         # 任务相关参数
         self.tasks_array = task_generator.generate_tasks()
         self.task_window_size = 10
@@ -255,31 +260,7 @@ class ScheduleEnv(gym.Env, ABC):
                 avail_actions[j] = 0  # 机器人技能不匹配，任务不可选
         return avail_actions
 
-    def step(self, actions):
-        """
-        执行智能体的动作，更新环境状态，并计算综合奖励。
-        """
-        time_step = 30  # 每个 step 的时间间隔
-        conflict_penalty = 0
-        total_service_cost_penalty = 0
-        total_wait_penalty = 0
-        concurrent_reward_weight = 2
-        conflict_penalty_weight = -3
-        service_cost_penalty_weight = -0.02  # 服务成本惩罚的权重
-        wait_penalty_weight = -0.2  # 等待一个任务就进行一个惩罚
-        conflict_count = 0  # 记录冲突数量
-        # 用于记录任务分配情况，检测冲突
-        task_allocation = {}
-
-        # 获取任务窗中未分配的任务集合，排除当前动作中涉及的任务
-        allocated_tasks = {
-            action for action in actions if action < self.task_window_size
-        }
-        unallocated_tasks = {
-            task_index for task_index, task in enumerate(self.task_window)
-            if all(x != 0 for x in task) and self.tasks_allocated[task[0]] == 0 and task_index not in allocated_tasks
-        }
-
+    def calc_concurrent_rewards(self, task_allocation):
         # 统计可以执行当前任务类型的机器人数量
         max_possible_assignments = 0
         for task in self.task_window:
@@ -293,6 +274,43 @@ class ScheduleEnv(gym.Env, ABC):
                 )
             )
             max_possible_assignments += min(1, capable_robots)  # 每个任务最多分配一次
+        
+        actual_assignments = len(task_allocation)
+        concurrent_ratio = actual_assignments / max_possible_assignments if max_possible_assignments > 0 else 0
+        concurrent_rewards = self.concurrent_reward_weight * concurrent_ratio * actual_assignments
+        return concurrent_rewards
+
+    def calc_total_wait_penalty(self):
+        # 累计等待惩罚
+        step_wait_num = sum(1 for task in self.tasks_array if self.tasks_allocated[task[0]] == 0 and task[1] <= self.time)
+        total_wait_penalty = self.wait_penalty_weight * step_wait_num
+        return total_wait_penalty
+    
+
+
+    def step(self, actions):
+        """
+        执行智能体的动作，更新环境状态，并计算综合奖励。
+        """
+        time_step = 30  # 每个 step 的时间间隔
+        conflict_penalty = 0
+        total_service_cost_penalty = 0
+        total_wait_penalty = 0
+        
+        
+        
+        conflict_count = 0  # 记录冲突数量
+        # 用于记录任务分配情况，检测冲突
+        task_allocation = {}
+
+        # 获取任务窗中未分配的任务集合，排除当前动作中涉及的任务
+        allocated_tasks = {
+            action for action in actions if action < self.task_window_size
+        }
+        unallocated_tasks = {
+            task_index for task_index, task in enumerate(self.task_window)
+            if all(x != 0 for x in task) and self.tasks_allocated[task[0]] == 0 and task_index not in allocated_tasks
+        }
 
         # 更新所有忙碌机器人状态
         for robot_id in range(self.robots.num_robots):
@@ -328,7 +346,7 @@ class ScheduleEnv(gym.Env, ABC):
                         time_on_road, total_time = self.robots.execute_task(agent_id, task)
                         self.robots_state[agent_id] = 1
                         self.tasks_allocated[task[0]] = 1
-                        total_service_cost_penalty += time_on_road * service_cost_penalty_weight
+                        total_service_cost_penalty += time_on_road * self.service_cost_penalty_weight
                     else:
                         # 对冲突机器人进行检查，如果可以执行未分配任务但未执行，则惩罚
                         for unallocated_task_index in unallocated_tasks:
@@ -337,7 +355,7 @@ class ScheduleEnv(gym.Env, ABC):
                             if all(
                                 rs >= ts for rs, ts in zip(self.robots.get_skills(agent_id), required_skills)
                             ):
-                                conflict_penalty += conflict_penalty_weight
+                                conflict_penalty += self.conflict_penalty_weight
                                 break
             else:  # 没有冲突
                 agent_id = agents[0]
@@ -345,23 +363,17 @@ class ScheduleEnv(gym.Env, ABC):
                 time_on_road, total_time = self.robots.execute_task(agent_id, task)
                 self.robots_state[agent_id] = 1
                 self.tasks_allocated[task[0]] = 1
-                total_service_cost_penalty += time_on_road * service_cost_penalty_weight
+                total_service_cost_penalty += time_on_road * self.service_cost_penalty_weight
             self.total_time_on_road += time_on_road
-
-        actual_assignments = len(task_allocation)
-        concurrent_ratio = actual_assignments / max_possible_assignments if max_possible_assignments > 0 else 0
-        concurrent_rewards = concurrent_reward_weight * concurrent_ratio * actual_assignments
-
-        # 累计等待惩罚
-        step_wait_num = sum(1 for task in self.tasks_array if self.tasks_allocated[task[0]] == 0 and task[1] <= self.time)
-        total_wait_penalty = wait_penalty_weight * step_wait_num
 
         # 更新时间步
         self.time += time_step
         self.total_time_wait = sum(self.time_wait) + self.total_time_on_road  # 累计等待时间
         done = self.time > self.tasks_array[-1][1] and sum(self.tasks_completed) == len(self.tasks_array)
 
-        # 综合奖励
+        concurrent_rewards = self.calc_concurrent_rewards(task_allocation)
+        total_wait_penalty = self.calc_total_wait_penalty()
+        # 综合奖励（90 -35/1.5 -120/2 -30）
         total_reward = concurrent_rewards + conflict_penalty + total_service_cost_penalty + total_wait_penalty
 
         info = {

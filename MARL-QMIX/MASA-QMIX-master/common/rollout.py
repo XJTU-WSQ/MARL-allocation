@@ -56,21 +56,30 @@ class RolloutWorker:
             self.env.renew_wait_time()
             obs = self.env.get_obs()
             state = self.env.get_state()
-            actions, avail_actions, actions_onehot = [], [], []
-            for agent_id in range(self.n_agents):
 
-                avail_action = self.env.get_avail_agent_actions(agent_id)
-                action = self.agents.choose_action(
-                    obs[agent_id], agent_id, avail_action, epsilon
-                )
-
-                # generate onehot vector of th action
+            avail_actions = [self.env.get_avail_agent_actions(agent_id) for agent_id in range(self.n_agents)]
+            actions = self.agents.choose_actions_batch(obs, avail_actions, epsilon)
+            actions_onehot = []
+            for action in actions:
                 action_onehot = np.zeros(self.args.n_actions)
                 action_onehot[action] = 1
-                actions.append(np.int(action))
                 actions_onehot.append(action_onehot)
-                avail_actions.append(avail_action)
-                last_action[agent_id] = action_onehot
+
+            # actions, avail_actions, actions_onehot = [], [], []
+            # for agent_id in range(self.n_agents):
+
+            #     avail_action = self.env.get_avail_agent_actions(agent_id)
+            #     action = self.agents.choose_action(
+            #         obs[agent_id], agent_id, avail_action, epsilon
+            #     )
+
+            #     # generate onehot vector of th action
+            #     action_onehot = np.zeros(self.args.n_actions)
+            #     action_onehot[action] = 1
+            #     actions.append(np.int(action))
+            #     actions_onehot.append(action_onehot)
+            #     avail_actions.append(avail_action)
+            #     last_action[agent_id] = action_onehot
 
             reward, terminated, info = self.env.step(actions)
 
@@ -184,6 +193,7 @@ class RolloutWorker:
             "completed_tasks": total_completed_tasks,
             "completion_rate": completion_rate,
             "episode_reward": episode_reward,
+            "epsilon_value":epsilon,
         }
 
         return episode, episode_reward, terminated, stats

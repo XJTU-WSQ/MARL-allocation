@@ -51,6 +51,46 @@ class Agents:
             action = torch.argmax(q_value).cpu()
         return action
 
+    def choose_actions_batch(self, obs, avail_actions, epsilon):
+        """
+        为所有代理选择动作
+        """
+        inputs = obs.copy()
+        batch_size = len(obs)
+        
+        # 创建代理ID的one-hot编码
+        agent_ids = np.eye(self.n_agents)
+
+        if self.args.reuse_network:
+            inputs = np.hstack((inputs, agent_ids))
+
+        # 转换输入维度
+        inputs = torch.tensor(inputs, dtype=torch.float32)
+        avail_actions = torch.tensor(avail_actions, dtype=torch.float32)
+
+        if self.args.cuda:
+            inputs = inputs.cuda()
+
+        # 初始化隐藏状态
+        hidden_states = self.policy.eval_hidden[:, :batch_size, :]
+
+        # 计算 Q 值
+        q_values, self.policy.eval_hidden[:, :batch_size, :] = self.policy.eval_rnn(inputs, hidden_states)
+
+        # 设置不可用动作的 Q 值为负无穷
+        q_values[avail_actions == 0.0] = -float("inf")
+
+        # 选择动作
+        actions = []
+        for i in range(batch_size):
+            if np.random.uniform() < epsilon:
+                action = random_choice_with_mask(avail_actions[i])
+            else:
+                action = torch.argmax(q_values[i]).cpu().item()
+            actions.append(action)
+
+        return actions
+
     def _get_max_episode_len(self, batch):
         terminated = batch['terminated']
         episode_num = terminated.shape[0]
