@@ -2,7 +2,7 @@ import copy
 import json
 import numpy as np
 from task import task_generator
-
+from loguru import logger
 
 class RolloutWorker:
     def __init__(self, env, agents, args):
@@ -80,8 +80,17 @@ class RolloutWorker:
             #     actions_onehot.append(action_onehot)
             #     avail_actions.append(avail_action)
             #     last_action[agent_id] = action_onehot
-
+            random_actions = self.env.assign_tasks_baseline(baseline_type='random')
+            greedy_actions = self.env.assign_tasks_baseline(baseline_type='greedy')
+            _, _, random_info = self.env.step(random_actions, freeze_env=True)
+            _, _, greedy_info = self.env.step(greedy_actions, freeze_env=True)
             reward, terminated, info = self.env.step(actions)
+            # 此处为临时修改（未录入tensorboard），后续可根据实际情况调整
+            reward1 = relative_reward(info,random_info,greedy_info,'concurrent_rewards')
+            reward2 = relative_reward(info,random_info,greedy_info,'conflict_penalty')
+            reward3 = relative_reward(info,random_info,greedy_info,'total_service_cost_penalty')
+            reward4 = relative_reward(info,random_info,greedy_info,'total_wait_penalty')
+            reward = reward1 + reward2 + reward3 + reward4
 
             # 累积统计量
             total_concurrent_rewards += info["concurrent_rewards"]
@@ -217,3 +226,26 @@ def convert_to_native(obj):
         return {k: convert_to_native(v) for k, v in obj.items()}  # 递归处理字典
     else:
         return obj  # 返回原始值
+
+
+def relative_reward(a_info, b_info, c_info, col_name):
+    a = a_info[col_name]
+    b = b_info[col_name]
+    c = c_info[col_name]
+
+    # 计算 b 和 c 的均值
+    baseline = (b + c) / 2
+    if baseline == 0:
+        baseline = -0.1
+    # 计算 a 相对于 baseline 的相对大小
+    relative_value = (a-baseline) / baseline
+    
+    # 检查 a 是否小于 b 和 c 的最小值
+    if a < min(b, c):
+        relative_value *= 10  # 翻10倍
+    
+    # 检查 a 是否大于 b 和 c 的最大值
+    elif a > max(b, c):
+        relative_value *= 10  # 翻10倍
+    # logger.info(f'relative {col_name}: {a},{b},{c},{relative_value}')
+    return relative_value
