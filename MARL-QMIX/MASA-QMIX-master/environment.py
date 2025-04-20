@@ -286,17 +286,66 @@ class ScheduleEnv(gym.Env, ABC):
         total_wait_penalty = self.wait_penalty_weight * step_wait_num
         return total_wait_penalty
     
+    def assign_tasks_baseline(self, baseline_type='random'):
+        self.update_task_window()
+        self.renew_wait_time()
 
+        actions = []
+        if baseline_type == 'random':
+            # Update the environment's task window and wait times
+            for robot_id in range(self.robots.num_robots):
+                available_actions = self.get_avail_agent_actions(robot_id)
 
-    def step(self, actions):
+                # Randomly choose a valid action (including "do nothing")
+                valid_actions = [action for action, available in enumerate(available_actions) if available == 1]
+                actions.append(np.random.choice(valid_actions))
+        elif baseline_type == 'greedy':
+            robot_positions = self.robots.robot_pos
+            task_window = self.task_window
+            actions = []
+
+            # Assign the closest task to each robot
+            for robot_id, robot_pos in enumerate(robot_positions):
+                closest_task = None
+                min_distance = float('inf')
+
+                # Get available actions for the robot
+                available_actions = self.get_avail_agent_actions(robot_id)
+
+                # Iterate through the task window to find the closest task
+                for task_index, task in enumerate(task_window):
+                    if available_actions[task_index] == 0:  # Skip if the task is not executable
+                        continue
+
+                    task_pos = self.sites.sites_pos[task[2]]
+                    distance = np.linalg.norm(np.array(robot_pos) - np.array(task_pos))
+
+                    # Update the closest task
+                    if distance < min_distance:
+                        closest_task = task_index
+                        min_distance = distance
+                # If no suitable task is found, choose the "do nothing" action
+                actions.append(closest_task if closest_task is not None else len(task_window))
+        return actions
+
+    def step(self, actions, freeze_env=False):
         """
         执行智能体的动作，更新环境状态，并计算综合奖励。
         """
-        time_step = 30  # 每个 step 的时间间隔
+        time_step = 30  # 每个 step 的时间间隔(额外冗余 30*120=3600s， 120对应episode_limit)
         conflict_penalty = 0
         total_service_cost_penalty = 0
         total_wait_penalty = 0
-        
+        if freeze_env:
+            freeze_dict = {
+                'robots_state':self.robots_state,
+                'tasks_completed':self.tasks_completed,
+                'tasks_allocated':self.tasks_allocated,
+                'time':self.time,
+                'total_time_wait':self.total_time_wait,
+                'total_time_on_road':self.total_time_on_road,
+
+            }
         
         
         conflict_count = 0  # 记录冲突数量
@@ -365,12 +414,11 @@ class ScheduleEnv(gym.Env, ABC):
                 self.tasks_allocated[task[0]] = 1
                 total_service_cost_penalty += time_on_road * self.service_cost_penalty_weight
             self.total_time_on_road += time_on_road
-
         # 更新时间步
         self.time += time_step
         self.total_time_wait = sum(self.time_wait) + self.total_time_on_road  # 累计等待时间
         done = self.time > self.tasks_array[-1][1] and sum(self.tasks_completed) == len(self.tasks_array)
-
+        
         concurrent_rewards = self.calc_concurrent_rewards(task_allocation)
         total_wait_penalty = self.calc_total_wait_penalty()
         # 综合奖励（90 -35/1.5 -120/2 -30）
@@ -386,6 +434,13 @@ class ScheduleEnv(gym.Env, ABC):
             "total_wait_penalty": total_wait_penalty,
             "done": done
         }
+        if freeze_env == True:
+            self.robots_state = freeze_dict['robots_state']
+            self.tasks_completed = freeze_dict['tasks_completed']
+            self.tasks_allocated = freeze_dict['tasks_allocated']
+            self.time = freeze_dict['time']
+            self.total_time_wait = freeze_dict['total_time_wait']
+            self.total_time_on_road = freeze_dict['total_time_on_road']
         return total_reward, done, info
 
     def get_env_info(self):
