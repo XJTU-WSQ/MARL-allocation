@@ -86,12 +86,11 @@ class RolloutWorker:
             _, _, greedy_info = self.env.step(greedy_actions, freeze_env=True)
             reward, terminated, info = self.env.step(actions)
             # 此处为临时修改（未录入tensorboard），后续可根据实际情况调整
-            reward1 = relative_reward(info,random_info,greedy_info,'concurrent_rewards')
-            reward2 = relative_reward(info,random_info,greedy_info,'conflict_penalty')
-            reward3 = relative_reward(info,random_info,greedy_info,'total_service_cost_penalty')
-            reward4 = relative_reward(info,random_info,greedy_info,'total_wait_penalty')
+            reward1 = relative_reward(info,random_info,greedy_info,'concurrent_rewards', self.epsilon)
+            reward2 = relative_reward(info,random_info,greedy_info,'conflict_penalty', self.epsilon)
+            reward3 = relative_reward(info,random_info,greedy_info,'total_service_cost_penalty', self.epsilon)
+            reward4 = relative_reward(info,random_info,greedy_info,'total_wait_penalty', self.epsilon)
             reward = reward1 + reward2 + reward3 + reward4
-
             # 累积统计量
             total_concurrent_rewards += info["concurrent_rewards"]
             total_conflicts += info["conflict_count"]
@@ -228,13 +227,14 @@ def convert_to_native(obj):
         return obj  # 返回原始值
 
 
-def relative_reward(a_info, b_info, c_info, col_name):
+def relative_reward(a_info, b_info, c_info, col_name, epsilon):
     a = a_info[col_name]
     b = b_info[col_name]
     c = c_info[col_name]
 
     # 计算 b 和 c 的均值
-    baseline = (b + c) / 2
+    baseline = min(b, c)
+    baseline = baseline + abs(b-c)*(1-epsilon)
     if baseline == 0:
         baseline = -0.1
     # 计算 a 相对于 baseline 的相对大小
