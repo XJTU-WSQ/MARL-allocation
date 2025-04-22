@@ -74,11 +74,9 @@ class Agents:
         # 初始化隐藏状态
         hidden_states = self.policy.eval_hidden[:, :batch_size, :]
 
-        # 计算 Q 值
-        q_values, self.policy.eval_hidden[:, :batch_size, :] = self.policy.eval_rnn(inputs, hidden_states)
-
-        # 设置不可用动作的 Q 值为负无穷
-        q_values[avail_actions == 0.0] = -float("inf")
+        with torch.no_grad():
+            q_values, self.policy.eval_hidden[:, :batch_size, :] = self.policy.eval_rnn(inputs, hidden_states)
+            q_values[avail_actions == 0.0] = -float("inf")
 
         # 选择动作
         actions = []
