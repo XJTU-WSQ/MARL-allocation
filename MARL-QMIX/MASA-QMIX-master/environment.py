@@ -85,7 +85,7 @@ class ScheduleEnv(gym.Env, ABC):
         优化后的 renew_wait_time：只遍历未分配任务集合。
         """
         tasks_to_remove = []
-        for task_index in self.unallocated_tasks:
+        for task_index in list(self.unallocated_tasks):  # ✅ 修复遍历报错
             if self.tasks_array[task_index][1] <= self.time:
                 self.time_wait[task_index] = self.time - self.tasks_array[task_index][1]
             else:
@@ -94,8 +94,7 @@ class ScheduleEnv(gym.Env, ABC):
                 tasks_to_remove.append(task_index)
 
         # 从未分配任务集合中移除已分配任务
-        for task_index in tasks_to_remove:
-            self.unallocated_tasks.remove(task_index)
+        self.unallocated_tasks -= set(tasks_to_remove)
 
     def update_task_window(self):
         """
