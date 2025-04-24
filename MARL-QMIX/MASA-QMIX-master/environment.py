@@ -24,6 +24,7 @@ class ScheduleEnv(gym.Env, ABC):
         self.conflict_penalty_weight = -1
         # 任务相关参数
         self.tasks_array = task_generator.generate_tasks()
+        # task： Task index|Time|Location|Task Type|Target|Duration
         self.task_window_size = 10
         self.locked_tasks = [0] * self.task_window_size  # 记录任务锁定状态
         self.time_wait = [0 for _ in range(len(self.tasks_array))]
@@ -85,13 +86,15 @@ class ScheduleEnv(gym.Env, ABC):
         优化后的 renew_wait_time：只遍历未分配任务集合。
         """
         tasks_to_remove = []
-        for task_index in list(self.unallocated_tasks):  # ✅ 修复遍历报错
+        for task_index in list(self.unallocated_tasks):  # 强制拷贝避免修改迭代错误
+            if self.tasks_allocated[task_index] == 1:
+                tasks_to_remove.append(task_index)
+                continue  # ⚠️ 已分配任务跳过等待时间计算
+
             if self.tasks_array[task_index][1] <= self.time:
                 self.time_wait[task_index] = self.time - self.tasks_array[task_index][1]
             else:
-                break  # 任务数组有序，可以提前退出
-            if self.tasks_allocated[task_index] == 1:
-                tasks_to_remove.append(task_index)
+                break
 
         # 从未分配任务集合中移除已分配任务
         self.unallocated_tasks -= set(tasks_to_remove)
@@ -236,7 +239,7 @@ class ScheduleEnv(gym.Env, ABC):
         获取当前机器人可执行的任务，并对无效任务动态掩码，返回动作掩码和惩罚权重。
         """
         avail_actions = [0] * (self.task_window_size + 1)  # 初始化动作掩码，+1 表示 "不执行任务"
-        avail_actions[-1] = 1  # 默认 "不执行任务" 动作可选
+        avail_actions[-1] = 1  # 默认 "不执行任务" 动作可选 0-9：任务窗对应位置任务，10：不执行任务
 
         # 如果机器人忙碌，直接返回
         if self.robots_state[agent_id] == 1:
@@ -260,20 +263,27 @@ class ScheduleEnv(gym.Env, ABC):
         return avail_actions
 
     def calc_concurrent_rewards(self, task_allocation):
-        # 统计可以执行当前任务类型的机器人数量
+        """
+        修正并发奖励计算逻辑：机器人不可重复分配。
+        """
+        available_robots = set(
+            robot_id for robot_id in range(self.robots.num_robots)
+            if self.robots_state[robot_id] == 0
+        )
         max_possible_assignments = 0
+
         for task in self.task_window:
-            if all(x == 0 for x in task):
+            if all(x == 0 for x in task):  # 跳过无效任务
                 continue
+
             required_skills = self.tasks.required_skills[task[3]]
-            capable_robots = sum(
-                1 for robot_id in range(self.robots.num_robots)
-                if self.robots_state[robot_id] == 0 and all(
-                    rs >= ts for rs, ts in zip(self.robots.get_skills(robot_id), required_skills)
-                )
-            )
-            max_possible_assignments += min(1, capable_robots)  # 每个任务最多分配一次
-        
+            for robot_id in available_robots:
+                robot_skills = self.robots.get_skills(robot_id)
+                if all(rs >= ts for rs, ts in zip(robot_skills, required_skills)):
+                    max_possible_assignments += 1
+                    available_robots.remove(robot_id)  # 分配后移除
+                    break  # 一个任务只需要一个机器人
+
         actual_assignments = len(task_allocation)
         concurrent_ratio = actual_assignments / max_possible_assignments if max_possible_assignments > 0 else 0
         concurrent_rewards = self.concurrent_reward_weight * concurrent_ratio * actual_assignments
@@ -337,16 +347,14 @@ class ScheduleEnv(gym.Env, ABC):
         total_wait_penalty = 0
         if freeze_env:
             freeze_dict = {
-                'robots_state':self.robots_state,
-                'tasks_completed':self.tasks_completed,
-                'tasks_allocated':self.tasks_allocated,
-                'time':self.time,
-                'total_time_wait':self.total_time_wait,
-                'total_time_on_road':self.total_time_on_road,
-
+                'robots_state': self.robots_state,
+                'tasks_completed': self.tasks_completed,
+                'tasks_allocated': self.tasks_allocated,
+                'time': self.time,
+                'total_time_wait': self.total_time_wait,
+                'total_time_on_road': self.total_time_on_road,
             }
-        
-        
+
         conflict_count = 0  # 记录冲突数量
         # 用于记录任务分配情况，检测冲突
         task_allocation = {}
@@ -433,6 +441,7 @@ class ScheduleEnv(gym.Env, ABC):
             "total_wait_penalty": total_wait_penalty,
             "done": done
         }
+
         if freeze_env == True:
             self.robots_state = freeze_dict['robots_state']
             self.tasks_completed = freeze_dict['tasks_completed']

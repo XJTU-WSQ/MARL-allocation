@@ -3,6 +3,7 @@
 robot类属性：
 位置信息、类型 robotID、空闲的标识符isIdle、0-1技能集合
 """
+import numpy as np
 from utils.util import *
 from utils.sites import Sites
 
