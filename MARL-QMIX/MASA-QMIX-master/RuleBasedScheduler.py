@@ -1,7 +1,6 @@
 import numpy as np
 import pickle
 from environment import ScheduleEnv
-from task.task_generator import generate_tasks
 
 
 class RuleBasedScheduler:
@@ -50,88 +49,6 @@ class RuleBasedScheduler:
 
         return actions
 
-    def step(self, actions):
-        """
-        Execute the assigned tasks and update the environment state.
-        :param actions: List of actions for each robot.
-        :return: Total reward, whether the episode is done, and additional info.
-        """
-        time_step = 30  # Time step duration
-        conflict_penalty = 0
-        total_service_cost_penalty = 0
-        conflict_count = 0
-        task_allocation = {}
-
-        # Update busy robots and check task completion
-        for robot_id in range(self.env.robots.num_robots):
-            if self.env.robots_state[robot_id] == 1:  # If the robot is busy
-                task_info = self.env.robots.robots_tasks_info[robot_id]
-                finished = self.env.robots.renew_position(
-                    robot_id, task_info[3], task_info[2], task_info[4], time_step
-                )
-                if finished:
-                    self.env.robots_state[robot_id] = 0
-                    self.env.tasks_completed[task_info[0]] = 1
-
-        # Assign tasks to robots and handle conflicts
-        for robot_id, action in enumerate(actions):
-            if action < self.env.task_window_size:  # Valid task
-                task_index = action
-                if task_index in task_allocation:
-                    task_allocation[task_index].append(robot_id)
-                else:
-                    task_allocation[task_index] = [robot_id]
-
-        for task_index, agents in task_allocation.items():
-            time_on_road = 0
-            if len(agents) > 1:  # Conflict occurred
-                conflict_count += 1
-                # Randomly choose one robot to execute the task
-                chosen_agent = np.random.choice(agents)
-
-                for agent_id in agents:
-                    if agent_id == chosen_agent:
-                        time_on_road, _ = self.env.robots.execute_task(
-                            agent_id, self.env.task_window[task_index]
-                        )
-                        self.env.robots_state[agent_id] = 1
-                        self.env.tasks_allocated[self.env.task_window[task_index][0]] = 1
-                        total_service_cost_penalty += time_on_road * self.env.service_cost_penalty_weight
-                    else:
-                        conflict_penalty += self.env.conflict_penalty_weight  # Penalty for conflict
-            else:  # No conflict
-                agent_id = agents[0]
-                time_on_road, _ = self.env.robots.execute_task(
-                    agent_id, self.env.task_window[task_index]
-                )
-                self.env.robots_state[agent_id] = 1
-                self.env.tasks_allocated[self.env.task_window[task_index][0]] = 1
-                total_service_cost_penalty += time_on_road * self.env.service_cost_penalty_weight
-            self.env.total_time_on_road += time_on_road
-
-        # Update global time and calculate rewards
-        self.env.time += time_step
-        self.env.total_time_wait = sum(self.env.time_wait) + self.env.total_time_on_road # Update total wait time
-
-        concurrent_rewards = self.env.calc_concurrent_rewards(task_allocation)
-        total_wait_penalty = self.env.calc_total_wait_penalty()
-        total_reward = concurrent_rewards + conflict_penalty + total_service_cost_penalty + total_wait_penalty
-        # total_reward = (2 * len(task_allocation) - conflict_penalty - total_service_cost_penalty)
-        done = self.env.time > self.env.tasks_array[-1][1] and sum(self.env.tasks_completed) == len(self.env.tasks_array)
-
-        info = {
-            "conflict_count": conflict_count,
-            "concurrent_rewards": concurrent_rewards,
-            "conflict_penalty": conflict_penalty,
-            "total_service_cost_penalty": total_service_cost_penalty,
-            "tasks_completed": sum(self.env.tasks_completed),
-            "total_time_wait": self.env.total_time_wait,  # Include total wait time in info
-            "total_wait_penalty": total_wait_penalty,
-            "done": done,
-        }
-
-        return total_reward, done, info
-
     def evaluate_scheduler(self, tasks):
         """
         Evaluate the rule-based scheduler: compute total wait time and task completion rate.
@@ -148,7 +65,7 @@ class RuleBasedScheduler:
         info_list = []
         for _ in range(self.env.get_env_info()['episode_limit']):
             actions = self.assign_tasks()
-            _, _, info = self.step(actions)
+            _, _, info = self.env.step(actions)
             info_list.append(info)
             tasks_completed = sum(self.env.tasks_completed)
             if info['done']:
