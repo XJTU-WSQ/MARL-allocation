@@ -177,6 +177,9 @@ class ScheduleEnv(gym.Env, ABC):
         normalized_robot_pos = [robot_pos[0] / max_pos_value, robot_pos[1] / max_pos_value]
         observation.append(self.robots_state[robot_id])  # 状态信息
         observation.extend(normalized_robot_pos)  # 归一化位置信息
+        robot_type_onehot = [0 for i in range(len(self.robots.robot_info))]
+        robot_type_onehot[robot_type_id] = 1
+        observation.extend(robot_type_onehot)  # 机器人类别信息
 
         # 2. 添加任务窗口信息（仅包含可执行任务，归一化等待时间和归一化距离）
         task_features = []
@@ -217,12 +220,12 @@ class ScheduleEnv(gym.Env, ABC):
 
         # 获取当前类型其他机器人的位置信息
         same_type_robot_positions = [
-            self.robots.robot_pos[r_id]
+            [self.robots.robot_pos[r_id][0], self.robots.robot_pos[r_id][1], self.robots_state[r_id]]
             for r_id in range(self.robots.num_robots)
             if self.robots.robots_type_id[r_id] == robot_type_id and r_id != robot_id
         ]
         for pos in same_type_robot_positions:
-            normalized_pos = [pos[0] / max_pos_value, pos[1] / max_pos_value]
+            normalized_pos = [pos[0] / max_pos_value, pos[1] / max_pos_value,  pos[2]]
             observation.extend(normalized_pos)
 
         # 计算需要填充的占位符数量
@@ -230,8 +233,13 @@ class ScheduleEnv(gym.Env, ABC):
 
         # 如果需要补齐，直接一次性填充
         if padding_count > 0:
-            observation.extend([0.0, 0.0] * padding_count)
+            observation.extend([0.0, 0.0, 0.0] * padding_count)
 
+        # observation 57 = 
+        # 3 = 当前机器人状态，位置（x,y)
+        # 5 = 机器人类别信息
+        # 40 = 10 * 任务信息（x,y,距离，已等待时间）
+        # 9 = 3*同类型机器人状态，位置（x,y)
         return np.array(observation, dtype=np.float32)
 
     def get_avail_agent_actions(self, agent_id):
@@ -345,16 +353,17 @@ class ScheduleEnv(gym.Env, ABC):
         conflict_penalty = 0
         total_service_cost_penalty = 0
         total_wait_penalty = 0
-        if freeze_env:
-            freeze_dict = {
-                'robots_state': self.robots_state,
-                'tasks_completed': self.tasks_completed,
-                'tasks_allocated': self.tasks_allocated,
-                'time': self.time,
-                'total_time_wait': self.total_time_wait,
-                'total_time_on_road': self.total_time_on_road,
-            }
+        freeze_dict = {
+            'robots_state':self.robots_state,
+            'tasks_completed':self.tasks_completed.copy(),
+            'tasks_allocated':self.tasks_allocated.copy(),
+            'time':self.time,
+            'total_time_wait':self.total_time_wait,
+            'total_time_on_road':self.total_time_on_road,
 
+        }   
+    
+        
         conflict_count = 0  # 记录冲突数量
         # 用于记录任务分配情况，检测冲突
         task_allocation = {}
@@ -429,8 +438,12 @@ class ScheduleEnv(gym.Env, ABC):
         concurrent_rewards = self.calc_concurrent_rewards(task_allocation)
         total_wait_penalty = self.calc_total_wait_penalty()
         # 综合奖励（90 -35/1.5 -120/2 -30）
+        # 完成分配的任务比例(旧) + 机器人冲突惩罚 + 服务距离惩罚 + 等待任务量惩罚
         total_reward = concurrent_rewards + conflict_penalty + total_service_cost_penalty + total_wait_penalty
-
+        shift_time_wait = self.total_time_wait - freeze_dict['total_time_wait']
+        shift_allocated_num = sum(self.tasks_allocated)-sum(freeze_dict['tasks_allocated'])
+        shift_completed_num = sum(self.tasks_completed)-sum(freeze_dict['tasks_completed'])
+        # logger.info(f'shift_time_wait:{shift_time_wait} shift_allocated_num:{shift_allocated_num} shift_completed_num:{shift_completed_num} ')
         info = {
             "robots_state": self.robots_state,
             "task_window": self.task_window,
@@ -439,7 +452,10 @@ class ScheduleEnv(gym.Env, ABC):
             "conflict_penalty": conflict_penalty,
             "total_service_cost_penalty": total_service_cost_penalty,
             "total_wait_penalty": total_wait_penalty,
-            "done": done
+            "done": done,
+            'shift_time_wait':shift_time_wait,
+            'shift_allocated_num':shift_allocated_num,
+            'shift_completed_num':shift_completed_num,
         }
 
         if freeze_env == True:
@@ -460,6 +476,6 @@ class ScheduleEnv(gym.Env, ABC):
             "n_agents": self.robots.num_robots,  # 机器人数量
             "state_shape": len(self.get_state()),  # 全局状态向量的长度
             "obs_shape": self.obs_shape,  # 动态观测维度
-            "episode_limit": 120
+            "episode_limit": 360
         }
 

@@ -6,13 +6,14 @@ from common.rollout import RolloutWorker
 from agent.agent import Agents
 import pickle
 import numpy as np
-
+from collections import defaultdict
+from loguru import logger
 
 def load_model_and_evaluate(file_path):
     # 加载固定任务集
     with open(file_path, "rb") as f:
         all_task_sets = pickle.load(f)
-
+    task_type_list = ['qmix','random','greedy']
     # 设置参数
     args = get_common_args()
     args = get_mixer_args(args)
@@ -34,20 +35,22 @@ def load_model_and_evaluate(file_path):
     rolloutWorker = RolloutWorker(env, agents, args)
 
     # 评估任务集
-    total_wait_times = []
-    completion_rates = []
+    total_wait_times = defaultdict(list)
+    completion_rates = defaultdict(list)
 
     for i, tasks in enumerate(all_task_sets):
-        _, _, _, stats = rolloutWorker.generate_episode(evaluate=True, tasks=tasks)  # 传入固定任务集
-        total_wait_times.append(stats["wait_time"])
-        completion_rates.append(stats["completion_rate"])
-        print(f"Run {i + 1}: Total wait time = {stats['wait_time']}, Completion rate = {stats['completion_rate']:.2%}")
+        for task_type in task_type_list:
+            _, _, _, stats = rolloutWorker.generate_episode(evaluate=True, 
+                                                    tasks=tasks, task_type=task_type)  # 传入固定任务集
+            total_wait_times[task_type].append(stats["wait_time"])
+            completion_rates[task_type].append(stats["completion_rate"])
+            logger.info(f"Run {task_type} {i + 1}: Total wait time = {stats['wait_time']}, Completion rate = {stats['completion_rate']:.2%}")
+    for task_type in task_type_list:
+        average_wait_time = np.mean(total_wait_times[task_type])
+        average_completion_rate = np.mean(completion_rates[task_type])
 
-    average_wait_time = np.mean(total_wait_times)
-    average_completion_rate = np.mean(completion_rates)
-
-    print(f"\nAverage wait time over {len(all_task_sets)} runs: {average_wait_time}")
-    print(f"Average completion rate over {len(all_task_sets)} runs: {average_completion_rate:.2%}")
+        logger.info(f"Average wait time over {len(all_task_sets)} runs with {task_type}: {average_wait_time}")
+        logger.info(f"Average completion rate over {len(all_task_sets)} runs with {task_type}: {average_completion_rate:.2%}")
 
     return average_wait_time, average_completion_rate
 
