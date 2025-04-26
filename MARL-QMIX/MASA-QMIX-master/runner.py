@@ -3,7 +3,6 @@ import sys
 import numpy as np
 from datetime import datetime
 from loguru import logger
-from concurrent.futures import ThreadPoolExecutor
 from collections import defaultdict
 
 from torch.utils.tensorboard import SummaryWriter
@@ -36,13 +35,13 @@ class Runner:
         if not os.path.exists(self.save_path):
             os.makedirs(self.save_path)
 
-    def run(self, generate_episode_type='parallel'):
+    def run(self):
         train_steps = 0
         for epoch in range(self.args.n_epoch):
             # 显示输出
-            if epoch % self.args.evaluate_cycle == 0:  # 测试
+            if epoch % self.args.evaluate_cycle == 1:  # 确保测试在模型文件更新之后
                 episode_reward, wait_time = self.evaluate()
-                print("\nevaluate_average_reward:", episode_reward, "evaluate_average_wait_time:", wait_time, "epoch:", epoch)
+                logger.info(f'Test evaluate_average_reward:{episode_reward:.2f}, evaluate_average_wait_time:{wait_time:.2f} epoch:{epoch:.2f}')
             epoch_info_ditct = defaultdict(list)
             epoch_stats_type = ['concurrent_rewards','conflict_penalty','wait_penalty','service_cost_penalty',
                                 'conflicts','wait_time','shift_time_wait','random_shift_time_wait','greedy_shift_time_wait',
@@ -50,34 +49,17 @@ class Runner:
             # 每个 epoch 收集多个 episode 的各类统计信息
             episodes = []
             with timer(f'generate_episode with n_episodes={self.args.n_episodes}'):
-                if generate_episode_type == 'origin':
-                    for _ in range(self.args.n_episodes):
-                        episode, episode_reward, terminated, episode_stats = self.rolloutWorker.generate_episode(epoch)
-                        # 累加统计量
-                        episodes.append(episode)
-                        epoch_info_ditct['epoch_rewards'].append(episode_reward)
-                        epoch_info_ditct['wait_times_random'].append(episode_stats["random_shift_time_wait"])
-                        epoch_info_ditct['wait_times_greedy'].append(episode_stats["greedy_shift_time_wait"])
-                        for stat_type in epoch_stats_type:
-                            epoch_info_ditct[stat_type].append(episode_stats[stat_type])
-                        epoch_info_ditct['total_avg_time_wait'].append(episode_stats["shift_time_wait"]/episode_stats["shift_allocated_num"])
-                elif generate_episode_type == 'parallel':
-                    with ThreadPoolExecutor(max_workers=self.args.n_episodes) as executor:
-                        futures = [executor.submit(self.rolloutWorker.generate_episode) for _ in range(self.args.n_episodes)]
-                        results = [future.result() for future in futures]
-                        for result in results:
-                            episode = result[0]
-                            episode_reward = result[1]
-                            episode_stats = result[-1]
-                            # 累加统计量
-                            episodes.append(episode)
-                            epoch_info_ditct['epoch_rewards'].append(episode_reward)
-                            epoch_info_ditct['wait_times_random'].append(episode_stats["random_shift_time_wait"])
-                            epoch_info_ditct['wait_times_greedy'].append(episode_stats["greedy_shift_time_wait"])
-                            for stat_type in epoch_stats_type:
-                                epoch_info_ditct[stat_type].append(episode_stats[stat_type])
-                            epoch_info_ditct['total_avg_time_wait'].append(episode_stats["shift_time_wait"]/episode_stats["shift_allocated_num"])
-
+                for _ in range(self.args.n_episodes):
+                    episode, episode_reward, terminated, episode_stats = self.rolloutWorker.generate_episode(epoch)
+                    # 累加统计量
+                    episodes.append(episode)
+                    epoch_info_ditct['epoch_rewards'].append(episode_reward)
+                    epoch_info_ditct['wait_times_random'].append(episode_stats["random_shift_time_wait"])
+                    epoch_info_ditct['wait_times_greedy'].append(episode_stats["greedy_shift_time_wait"])
+                    for stat_type in epoch_stats_type:
+                        epoch_info_ditct[stat_type].append(episode_stats[stat_type])
+                    epoch_info_ditct['total_avg_time_wait'].append(episode_stats["shift_time_wait"]/episode_stats["shift_allocated_num"])
+            
             avg_conflicts = np.mean(epoch_info_ditct['conflicts'])
             avg_wait_time = np.mean(epoch_info_ditct['shift_time_wait'])
             avg_completed_tasks = np.mean(epoch_info_ditct['completed_tasks'])
@@ -112,7 +94,7 @@ class Runner:
             avg_random_avg_time_wait = np.mean(epoch_info_ditct['wait_times_random'])
             avg_greedy_avg_time_wait = np.mean(epoch_info_ditct['wait_times_greedy'])
 
-            logger.info(f'avg_wait_time: {avg_wait_time}   random_avg_wait_time: {avg_random_avg_time_wait} greedy_avg_wait_time: {avg_greedy_avg_time_wait}')
+            logger.info(f'Compare avg_wait_time: {avg_wait_time:.2f} random_avg_wait_time: {avg_random_avg_time_wait:.2f} greedy_avg_wait_time: {avg_greedy_avg_time_wait:.2f}')
             # 写入 TensorBoard
             self.writer.add_scalar("Train/Conflicts", avg_conflicts, epoch)
             self.writer.add_scalar("Train/Wait Time", avg_wait_time, epoch)
@@ -153,8 +135,7 @@ class Runner:
             # 保存 episode 到缓冲区
             self.buffer.store_episode(episode_batch)
 
-            logger.info(f"Epoch {epoch}: Average Reward={avg_reward:.2f}, Average Wait_time={avg_wait_time:.2f}, \
-                        Estimated Wait_time per_task={avg_wait_time/avg_completed_tasks:.2f}")
+            logger.info(f"Epoch {epoch}: Average Reward={avg_reward:.2f}, Average Wait_time={avg_wait_time:.2f}, Estimated Wait_time per_task={avg_wait_time/avg_completed_tasks:.2f}")
             # 执行训练步骤
             
             for train_step in range(self.args.train_steps):
