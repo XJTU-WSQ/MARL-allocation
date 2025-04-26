@@ -1,7 +1,9 @@
 import numpy as np
+import pandas as pd
 import torch
 from policy.qmix import QMIX
-
+from scipy.optimize import linear_sum_assignment
+from loguru import logger
 
 def random_choice_with_mask(avail_actions):
     temp = []
@@ -51,9 +53,13 @@ class Agents:
             action = torch.argmax(q_value).cpu()
         return action
 
-    def choose_actions_batch(self, obs, avail_actions, epsilon):
+    def choose_actions_batch(self, obs, avail_actions, epsilon, constraint_type=3):
         """
         为所有代理选择动作
+        constraint_type: 1 表示agent优先策略，每个agent根据q值最大进行选择
+        constraint_type: 2 表示匈牙利算法，通过q值构建成本矩阵，根据全局q值最大进行选择
+        constraint_type: 3 表示task优先策略，每个task根据q值最大进行选择
+        补充：类型1中每个任务可以分配给多个agent，类型2与3中每个任务只会分配给单个agent
         """
         inputs = obs.copy()
         batch_size = len(obs)
@@ -76,17 +82,58 @@ class Agents:
 
         with torch.no_grad():
             q_values, self.policy.eval_hidden[:, :batch_size, :] = self.policy.eval_rnn(inputs, hidden_states)
-            q_values[avail_actions == 0.0] = -float("inf")
-
-        # 选择动作
-        actions = []
-        for i in range(batch_size):
-            if np.random.uniform() < epsilon:
-                action = random_choice_with_mask(avail_actions[i])
-            else:
-                action = torch.argmax(q_values[i]).cpu().item()
-            actions.append(action)
-
+            
+            if constraint_type == 2:
+                fillna_value = 1e6
+                cost_matrix = 1/(q_values.cpu()-q_values.cpu().min()+0.001)
+                
+                for i in range(batch_size):
+                    if np.random.uniform() < epsilon:
+                        cost_matrix[i] = cost_matrix[i][torch.randperm(cost_matrix[i].size(0))]
+                    if obs[i][0] == 1:
+                        cost_matrix[i] = fillna_value
+                cost_matrix[avail_actions == 0.0] = fillna_value
+                cost_matrix = cost_matrix.nan_to_num(fillna_value)
+                try:
+                    row_ind, col_ind = linear_sum_assignment(cost_matrix)
+                except:
+                    print(cost_matrix)
+                    print(q_values)
+                actions = col_ind
+                for i in range(batch_size):
+                    if avail_actions[i][actions[i]]==0:
+                        actions[i]=10
+            else: 
+                q_values[avail_actions == 0.0] = -float("inf")
+                if constraint_type == 1:
+                    # 选择动作: 带随机
+                    actions = []
+                    for i in range(batch_size):
+                        if np.random.uniform() < epsilon:
+                            action = random_choice_with_mask(avail_actions[i]) # 按照一定探索率随机选择
+                        else:
+                            action = torch.argmax(q_values[i]).cpu().item() # 根据Q值最大化进行最优选择
+                        actions.append(action)
+                elif constraint_type == 3:
+                    # 选择 Agent：带随机
+                    agents = []
+                    q_values_clone = q_values.clone()
+                    for i in range(self.n_actions):
+                        if q_values_clone[:-1,i].cpu().max()==-float("inf"):
+                            agent_id = np.nan
+                        elif np.random.uniform() < epsilon:
+                            agent_id = random_choice_with_mask(avail_actions[:,i]) # 按照一定探索率随机选择
+                            q_values_clone[agent_id,:] = -float("inf")
+                        else:
+                            agent_id = torch.argmax(q_values_clone[:,i]).cpu().item() # 根据Q值最大化进行最优选择
+                            q_values_clone[agent_id,:] = -float("inf")
+                        agents.append(agent_id)
+                    actions = [10 for i in range(batch_size)] # 
+                    for i in range(len(agents)):
+                        if not pd.isna(agents[i]):
+                            actions[agents[i]] = i
+                else:
+                    logger.error(f'unsupport paramater value with constraint_type={constraint_type}')
         return actions
 
     def _get_max_episode_len(self, batch):
@@ -109,7 +156,7 @@ class Agents:
         # different episode has different length, so we need to get max length of the batch
         max_episode_len = self._get_max_episode_len(batch)
         for key in batch.keys():
-            if key != 'z':
+            if key != 'z': # 另外一个算法的参数，qmix可不考虑（无影响）
                 batch[key] = batch[key][:, :max_episode_len]
         self.policy.learn(batch, max_episode_len, train_step, epsilon)
 
