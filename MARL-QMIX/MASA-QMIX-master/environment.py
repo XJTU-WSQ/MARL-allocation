@@ -54,6 +54,7 @@ class ScheduleEnv(gym.Env, ABC):
         # 任务信息初始化
         self.task_window_size = 10
         self.time_wait = [0 for _ in range(len(self.tasks_array))]
+        self.time_on_road = [0 for _ in range(len(self.tasks_array))]
         self.total_time_wait = 0
         self.total_time_on_road = 0
         self.tasks_completed = [0 for _ in range(len(self.tasks_array))]
@@ -411,6 +412,7 @@ class ScheduleEnv(gym.Env, ABC):
                         time_on_road, total_time = self.robots.execute_task(agent_id, task)
                         self.robots_state[agent_id] = 1
                         self.tasks_allocated[task[0]] = 1
+                        self.time_on_road[task[0]] = time_on_road
                         total_service_cost_penalty += time_on_road * self.service_cost_penalty_weight
                     else:
                         # 对冲突机器人进行检查，如果可以执行未分配任务但未执行，则惩罚
@@ -428,6 +430,7 @@ class ScheduleEnv(gym.Env, ABC):
                 time_on_road, total_time = self.robots.execute_task(agent_id, task)
                 self.robots_state[agent_id] = 1
                 self.tasks_allocated[task[0]] = 1
+                self.time_on_road[task[0]] = time_on_road
                 total_service_cost_penalty += time_on_road * self.service_cost_penalty_weight
             self.total_time_on_road += time_on_road
         # 更新时间步
@@ -444,6 +447,7 @@ class ScheduleEnv(gym.Env, ABC):
         shift_allocated_num = sum(self.tasks_allocated)-sum(freeze_dict['tasks_allocated'])
         shift_completed_num = sum(self.tasks_completed)-sum(freeze_dict['tasks_completed'])
         # logger.info(f'shift_time_wait:{shift_time_wait} shift_allocated_num:{shift_allocated_num} shift_completed_num:{shift_completed_num} ')
+        # logger.info(f'shift_time_wait:{shift_time_wait} sum_allocated_num:{sum(self.tasks_allocated)} sum_completed_num:{sum(self.tasks_completed)} ')
         info = {
             "robots_state": self.robots_state,
             "task_window": self.task_window,
@@ -453,7 +457,8 @@ class ScheduleEnv(gym.Env, ABC):
             "total_service_cost_penalty": total_service_cost_penalty,
             "total_wait_penalty": total_wait_penalty,
             "done": done,
-            'shift_time_wait':shift_time_wait,
+            'shift_time_wait': shift_time_wait,
+            'max_time_wait': np.max([i[0]+i[1] for i in zip(self.time_wait,self.time_on_road)]),
             'shift_allocated_num':shift_allocated_num,
             'shift_completed_num':shift_completed_num,
         }
@@ -476,6 +481,6 @@ class ScheduleEnv(gym.Env, ABC):
             "n_agents": self.robots.num_robots,  # 机器人数量
             "state_shape": len(self.get_state()),  # 全局状态向量的长度
             "obs_shape": self.obs_shape,  # 动态观测维度
-            "episode_limit": 360
+            "episode_limit": 120
         }
 

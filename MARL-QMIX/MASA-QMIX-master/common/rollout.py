@@ -54,6 +54,10 @@ class RolloutWorker:
         total_shift_time_wait = 0
         total_random_shift_time_wait = 0
         total_greedy_shift_time_wait = 0
+        
+        max_shift_time_wait = 0
+        max_random_time_wait = 0
+        max_greedy_time_wait = 0
 
         total_shift_allocated_num = 0
         total_random_allocated_num = 0
@@ -105,6 +109,10 @@ class RolloutWorker:
             total_random_shift_time_wait += random_info["shift_time_wait"]
             total_greedy_shift_time_wait += greedy_info["shift_time_wait"]
 
+            max_shift_time_wait = max(max_shift_time_wait, info["max_time_wait"])
+            max_random_time_wait = max(max_random_time_wait, random_info["max_time_wait"])
+            max_greedy_time_wait = max(max_greedy_time_wait, greedy_info["max_time_wait"])
+
             total_shift_allocated_num += info["shift_allocated_num"]
             total_random_allocated_num += random_info["shift_allocated_num"]
             total_greedy_allocated_num += greedy_info["shift_allocated_num"]
@@ -146,9 +154,10 @@ class RolloutWorker:
         avg_random_time_wait = total_random_shift_time_wait/total_random_allocated_num
         avg_qmix_time_wait = total_shift_time_wait/total_shift_allocated_num
         episode_reward = relative_reward(-avg_qmix_time_wait, -avg_greedy_time_wait, -avg_random_time_wait, self.epsilon)
-        episode_reward2 = relative_reward(total_shift_allocated_num, total_random_allocated_num, total_greedy_allocated_num, self.epsilon)
-        episode_reward3 = relative_reward(total_shift_completed_num, total_random_completed_num, total_greedy_completed_num, self.epsilon)
-        episode_reward = episode_reward + 0.1*episode_reward2 + episode_reward3
+        episode_reward2 = relative_reward(-max_shift_time_wait, -max_greedy_time_wait, -max_random_time_wait, self.epsilon)
+        episode_reward3 = relative_reward(total_shift_allocated_num, total_random_allocated_num, total_greedy_allocated_num, self.epsilon)
+        episode_reward4 = relative_reward(total_shift_completed_num, total_random_completed_num, total_greedy_completed_num, self.epsilon)
+        episode_reward = episode_reward + episode_reward2 + 0.1*episode_reward3 + episode_reward4
         # 全局奖励：考虑平均等待时间，已分配任务数和已完成任务数
         # last obs
         obs = self.env.get_obs()
@@ -208,8 +217,10 @@ class RolloutWorker:
                 print(f"Episode {episode_num} data saved to episode_{episode_num}.json")
         total_wait_time = self.env.total_time_wait  # 累计等待时间
         total_completed_tasks = sum(self.env.tasks_completed)
+        total_allocated_tasks = sum(self.env.tasks_allocated)
         total_tasks = len(self.env.tasks_array)
         completion_rate = total_completed_tasks / total_tasks
+        allocated_rate = total_allocated_tasks / total_tasks
         # 构建统计量
         stats = {
             "concurrent_rewards": total_concurrent_rewards,
@@ -220,10 +231,13 @@ class RolloutWorker:
             "service_cost_penalty": total_service_cost_penalty,
             "completed_tasks": total_completed_tasks,
             "completion_rate": completion_rate,
+            "allocated_rate": allocated_rate,
             "episode_reward": episode_reward,
             "epsilon_value":epsilon,
             "shift_time_wait":total_shift_time_wait,
-            "shift_allocated_num":total_shift_allocated_num,
+            "max_shift_time_wait":max_shift_time_wait,
+            "total_allocated_num":total_shift_allocated_num,
+            "total_completed_num":total_shift_completed_num,
             "random_shift_time_wait":total_random_shift_time_wait,
             "greedy_shift_time_wait":total_greedy_shift_time_wait
         }
@@ -253,12 +267,12 @@ def convert_to_native(obj):
 
 def relative_reward(a, b, c, epsilon):
     # 根据 b 和 c 构建基线，评估 a 所处位置并用于奖励的计算
-    baseline_lower = min(b, c)
-    baseline_upper = max(b, c)
+    baseline_lower = min(b, c)+(1.1-epsilon)*abs(b-c)
+    baseline_upper = max(b, c)+(1.1-epsilon)*abs(b-c)
     one_level_range = abs(b-c)/10+1
     if a < baseline_lower:
-        return -10*(baseline_lower - a)/(one_level_range)
+        return -5-5*(baseline_lower - a)/(one_level_range)
     elif a > baseline_upper:
-        return 10*(a - baseline_upper)/(one_level_range)
+        return 5+5*(a - baseline_upper)/(one_level_range)
     else:
         return (a - baseline_lower)/one_level_range - 5

@@ -37,20 +37,29 @@ def load_model_and_evaluate(file_path):
     # 评估任务集
     total_wait_times = defaultdict(list)
     completion_rates = defaultdict(list)
+    max_wait_times = defaultdict(list)
+    allocated_rates = defaultdict(list)
 
     for i, tasks in enumerate(all_task_sets):
         for task_type in task_type_list:
             _, _, _, stats = rolloutWorker.generate_episode(evaluate=True, 
                                                     tasks=tasks, task_type=task_type)  # 传入固定任务集
-            total_wait_times[task_type].append(stats["wait_time"])
+            total_wait_times[task_type].append(stats["shift_time_wait"])
             completion_rates[task_type].append(stats["completion_rate"])
-            logger.info(f"Run {task_type} {i + 1}: Total wait time = {stats['wait_time']}, Completion rate = {stats['completion_rate']:.2%}")
+            max_wait_times[task_type].append(stats["max_shift_time_wait"])
+            allocated_rates[task_type].append(stats["shift_allocated_num"])
+            logger.info(f"Run {task_type} {i + 1}: Total wait time = {stats['shift_time_wait']:.2}, completion_rate = {stats['completion_rate']:.2%}")
+            logger.info(f"Run {task_type} {i + 1}: MAX wait time = {stats['max_shift_time_wait']:.2}, total_allocated_num = {stats['total_allocated_num']:.2}")
     for task_type in task_type_list:
         average_wait_time = np.mean(total_wait_times[task_type])
+        average_max_wait_times = np.mean(max_wait_times[task_type])
         average_completion_rate = np.mean(completion_rates[task_type])
+        average_allocated_rate = np.mean(allocated_rates[task_type])
 
-        logger.info(f"Average wait time over {len(all_task_sets)} runs with {task_type}: {average_wait_time}")
+        logger.info(f"Average wait time over {len(all_task_sets)} runs with {task_type}: {average_wait_time:.2}")
+        logger.info(f"Average max wait time over {len(all_task_sets)} runs with {task_type}: {average_max_wait_times:.2}")
         logger.info(f"Average completion rate over {len(all_task_sets)} runs with {task_type}: {average_completion_rate:.2%}")
+        logger.info(f"Average allocated rate over {len(all_task_sets)} runs with {task_type}: {average_allocated_rate:.2%}")
 
     return average_wait_time, average_completion_rate
 
