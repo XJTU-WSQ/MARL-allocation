@@ -53,12 +53,13 @@ class Agents:
             action = torch.argmax(q_value).cpu()
         return action
 
-    def choose_actions_batch(self, obs, avail_actions, epsilon, constraint_type=3):
+    def choose_actions_batch(self, obs, avail_actions, epsilon, constraint_type=4):
         """
         为所有代理选择动作
         constraint_type: 1 表示agent优先策略，每个agent根据q值最大进行选择
         constraint_type: 2 表示匈牙利算法，通过q值构建成本矩阵，根据全局q值最大进行选择
         constraint_type: 3 表示task优先策略，每个task根据q值最大进行选择
+        constraint_type: 4 表示task优先策略，每个task根据q值最大进行选择，但探索策略更保守
         补充：类型1中每个任务可以分配给多个agent，类型2与3中每个任务只会分配给单个agent
         """
         inputs = obs.copy()
@@ -83,7 +84,7 @@ class Agents:
         with torch.no_grad():
             q_values, self.policy.eval_hidden[:, :batch_size, :] = self.policy.eval_rnn(inputs, hidden_states)
             
-            if constraint_type == 2:
+            if constraint_type == 2: # 动作优先策略：基于匈牙利算法，每个agent选择最佳的动作，带随机探索和1对1约束
                 fillna_value = 1e6
                 cost_matrix = 1/(q_values.cpu()-q_values.cpu().min()+0.001)
                 
@@ -105,8 +106,7 @@ class Agents:
                         actions[i]=10
             else: 
                 q_values[avail_actions == 0.0] = -float("inf")
-                if constraint_type == 1:
-                    # 选择动作: 带随机
+                if constraint_type == 1: # 动作优先策略，每个agent选择最佳的动作，带随机探索，不支持1对1约束
                     actions = []
                     for i in range(batch_size):
                         if np.random.uniform() < epsilon:
@@ -114,8 +114,7 @@ class Agents:
                         else:
                             action = torch.argmax(q_values[i]).cpu().item() # 根据Q值最大化进行最优选择
                         actions.append(action)
-                elif constraint_type == 3:
-                    # 选择 Agent：带随机
+                elif constraint_type == 3: # 任务优先策略，每个任务选择最佳的agent，带随机探索和1对1约束
                     agents = []
                     q_values_clone = q_values.clone()
                     for i in range(self.n_actions):
@@ -129,6 +128,40 @@ class Agents:
                             q_values_clone[agent_id,:] = -float("inf")
                         agents.append(agent_id)
                     actions = [10 for i in range(batch_size)] # 
+                    for i in range(len(agents)):
+                        if not pd.isna(agents[i]):
+                            actions[agents[i]] = i
+                elif constraint_type == 4: # 任务优先策略，每个任务选择最佳的agent，带随机探索和1对1约束
+                    agents = []
+                    q_values_clone = q_values.clone()
+                    for i in range(self.n_actions):
+                        if q_values_clone[:-1, i].cpu().max() == -float("inf"):
+                            agent_id = np.nan
+                        elif np.random.uniform() < epsilon: # 以 epsilon 的概率进行探索
+                            rand_choice = np.random.uniform()
+                            if rand_choice < 0.25: # 25% 的概率选择次优结果
+                                q_values_clone[:, i] = q_values_clone[:, i].cpu()
+                                q_values_clone[:, i][q_values_clone[:-1, i].argmax()] = -float("inf")  # 排除最优
+                                agent_id = torch.argmax(q_values_clone[:, i]).cpu().item()
+                                if q_values_clone[:, i].cpu().max() == -float("inf"):
+                                    agent_id = np.nan
+                            elif rand_choice < 0.5: # 25% 的概率选择更次优的结果
+                                q_values_clone[:, i] = q_values_clone[:, i].cpu()
+                                q_values_clone[:, i][q_values_clone[:-1, i].argmax()] = -float("inf")  # 排除最优
+                                second_best = torch.argmax(q_values_clone[:-1, i]).cpu().item()
+                                q_values_clone[:, i][second_best] = -float("inf")  # 排除次优
+                                agent_id = torch.argmax(q_values_clone[:, i]).cpu().item()
+                                if q_values_clone[:, i].cpu().max() == -float("inf"):
+                                    agent_id = np.nan
+                            else: # 50% 的概率保留原有的规则进行随机选择
+                                agent_id = random_choice_with_mask(avail_actions[:, i])
+                                q_values_clone[agent_id, :] = -float("inf")
+                        else:
+                            # 根据Q值最大化进行最优选择
+                            agent_id = torch.argmax(q_values_clone[:, i]).cpu().item()
+                            q_values_clone[agent_id, :] = -float("inf")
+                        agents.append(agent_id)
+                    actions = [10 for i in range(batch_size)]
                     for i in range(len(agents)):
                         if not pd.isna(agents[i]):
                             actions[agents[i]] = i

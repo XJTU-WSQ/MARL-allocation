@@ -42,10 +42,10 @@ class Runner:
             if epoch % self.args.evaluate_cycle == 1:  # 确保测试在模型文件更新之后
                 episode_reward, wait_time = self.evaluate()
                 logger.info(f'Test evaluate_average_reward:{episode_reward:.2f}, evaluate_average_wait_time:{wait_time:.2f} epoch:{epoch:.2f}')
-            epoch_info_ditct = defaultdict(list)
+            epoch_info_dict = defaultdict(list)
             epoch_stats_type = ['concurrent_rewards','conflict_penalty','wait_penalty','service_cost_penalty',
                                 'conflicts','wait_time','shift_time_wait','random_shift_time_wait','greedy_shift_time_wait',
-                                'completed_tasks','completion_rate','epsilon_value']
+                                'completed_tasks','completion_rate','allocated_rate','epsilon_value','max_shift_time_wait']
             # 每个 epoch 收集多个 episode 的各类统计信息
             episodes = []
             with timer(f'generate_episode with n_episodes={self.args.n_episodes}'):
@@ -53,79 +53,36 @@ class Runner:
                     episode, episode_reward, terminated, episode_stats = self.rolloutWorker.generate_episode(epoch)
                     # 累加统计量
                     episodes.append(episode)
-                    epoch_info_ditct['epoch_rewards'].append(episode_reward)
-                    epoch_info_ditct['wait_times_random'].append(episode_stats["random_shift_time_wait"])
-                    epoch_info_ditct['wait_times_greedy'].append(episode_stats["greedy_shift_time_wait"])
+                    epoch_info_dict['epoch_rewards'].append(episode_reward)
+                    epoch_info_dict['wait_times_random'].append(episode_stats["random_shift_time_wait"])
+                    epoch_info_dict['wait_times_greedy'].append(episode_stats["greedy_shift_time_wait"])
                     for stat_type in epoch_stats_type:
-                        epoch_info_ditct[stat_type].append(episode_stats[stat_type])
-                    epoch_info_ditct['total_avg_time_wait'].append(episode_stats["shift_time_wait"]/episode_stats["shift_allocated_num"])
+                        epoch_info_dict[stat_type].append(episode_stats[stat_type])
+                    epoch_info_dict['total_avg_time_wait'].append(episode_stats["shift_time_wait"]/episode_stats["total_allocated_num"])
+
+            epoch_avg_dict = defaultdict(int)
+            avg_stats_type = ['conflicts','shift_time_wait','max_shift_time_wait','completed_tasks','completion_rate','epsilon_value',
+                              'epoch_rewards','concurrent_rewards','conflict_penalty','wait_penalty','service_cost_penalty',
+                              'total_avg_time_wait','wait_times_random','wait_times_greedy']
+            for avg_stat in avg_stats_type:
+                epoch_avg_dict[avg_stat] = np.mean(epoch_info_dict[avg_stat])
+                self.writer.add_scalar(f"Train/AVG {avg_stat}", epoch_avg_dict[avg_stat], epoch)
             
-            avg_conflicts = np.mean(epoch_info_ditct['conflicts'])
-            avg_wait_time = np.mean(epoch_info_ditct['shift_time_wait'])
-            avg_completed_tasks = np.mean(epoch_info_ditct['completed_tasks'])
-            avg_completion_rate = np.mean(epoch_info_ditct['completion_rate'])
-            avg_epsilon_value = np.mean(epoch_info_ditct['epsilon_value'])
+            epoch_max_dict = defaultdict(int)
+            epoch_min_dict = defaultdict(int)
+            maxmin_stats_type = ['epoch_rewards','concurrent_rewards','conflict_penalty','wait_penalty','service_cost_penalty','total_avg_time_wait']
+            for maxmin_stat in maxmin_stats_type:
+                epoch_max_dict[maxmin_stat] = np.max(epoch_info_dict[maxmin_stat])
+                epoch_min_dict[maxmin_stat] = np.min(epoch_info_dict[maxmin_stat])
+                self.writer.add_scalar(f"Train/MAX {maxmin_stat}", epoch_max_dict[maxmin_stat], epoch)
+                self.writer.add_scalar(f"Train/MIN {maxmin_stat}", epoch_min_dict[maxmin_stat], epoch)
 
-            # Compute statistics for this epoch
-            avg_reward = np.mean(epoch_info_ditct['epoch_rewards'])
-            max_reward = np.max(epoch_info_ditct['epoch_rewards'])
-            min_reward = np.min(epoch_info_ditct['epoch_rewards'])
-
-            avg_concurrent_rewards = np.mean(epoch_info_ditct['concurrent_rewards'])
-            max_concurrent_rewards = np.max(epoch_info_ditct['concurrent_rewards'])
-            min_concurrent_rewards = np.min(epoch_info_ditct['concurrent_rewards'])
-
-            avg_conflict_penalties = np.mean(epoch_info_ditct['conflict_penalty'])
-            max_conflict_penalties = np.max(epoch_info_ditct['conflict_penalty'])
-            min_conflict_penalties = np.min(epoch_info_ditct['conflict_penalty'])
-
-            avg_wait_penalty = np.mean(epoch_info_ditct['wait_penalty'])
-            max_wait_penalty = np.max(epoch_info_ditct['wait_penalty'])
-            min_wait_penalty = np.min(epoch_info_ditct['wait_penalty'])
-
-            avg_service_cost_penalty = np.mean(epoch_info_ditct['service_cost_penalty'])
-            max_service_cost_penalty = np.max(epoch_info_ditct['service_cost_penalty'])
-            min_service_cost_penalty = np.min(epoch_info_ditct['service_cost_penalty'])
-
-            avg_total_avg_time_wait = np.mean(epoch_info_ditct['total_avg_time_wait'])
-            max_total_avg_time_wait = np.max(epoch_info_ditct['total_avg_time_wait'])
-            min_total_avg_time_wait = np.min(epoch_info_ditct['total_avg_time_wait'])
-
-            avg_random_avg_time_wait = np.mean(epoch_info_ditct['wait_times_random'])
-            avg_greedy_avg_time_wait = np.mean(epoch_info_ditct['wait_times_greedy'])
-
-            logger.info(f'Compare avg_wait_time: {avg_wait_time:.2f} random_avg_wait_time: {avg_random_avg_time_wait:.2f} greedy_avg_wait_time: {avg_greedy_avg_time_wait:.2f}')
+            qmix_avg_time = epoch_avg_dict['shift_time_wait']
+            random_avg_time = epoch_avg_dict['wait_times_random']
+            greedy_avg_time = epoch_avg_dict['wait_times_greedy']
+            logger.info(f'Compare shift_time_wait: QMIX={qmix_avg_time:.2f} random={random_avg_time:.2f} greedy={greedy_avg_time:.2f}')
             # 写入 TensorBoard
-            self.writer.add_scalar("Train/Conflicts", avg_conflicts, epoch)
-            self.writer.add_scalar("Train/Wait Time", avg_wait_time, epoch)
-            self.writer.add_scalar("Train/Completed Tasks", avg_completed_tasks, epoch)
-            self.writer.add_scalar("Train/Completion Rate", avg_completion_rate, epoch)
-            self.writer.add_scalar("Train/Epsilon Value", avg_epsilon_value, epoch)
-
-            self.writer.add_scalar("Train/Average Reward", avg_reward, epoch)
-            self.writer.add_scalar("Train/Max Reward", max_reward, epoch)
-            self.writer.add_scalar("Train/Min Reward", min_reward, epoch)
-
-            self.writer.add_scalar("Train/Average Wait Penalty", avg_wait_penalty, epoch)
-            self.writer.add_scalar("Train/Max Wait Penalty", max_wait_penalty, epoch)
-            self.writer.add_scalar("Train/Min Wait Penalty", min_wait_penalty, epoch)
-
-            self.writer.add_scalar("Train/Average Service Cost Penalty", avg_service_cost_penalty, epoch)
-            self.writer.add_scalar("Train/Max Service Cost Penalty", max_service_cost_penalty, epoch)
-            self.writer.add_scalar("Train/Min Service Cost Penalty", min_service_cost_penalty, epoch)
-
-            self.writer.add_scalar("Train/Average Concurrent Rewards", avg_concurrent_rewards, epoch)
-            self.writer.add_scalar("Train/Max Concurrent Rewards", max_concurrent_rewards, epoch)
-            self.writer.add_scalar("Train/Min Concurrent Rewards", min_concurrent_rewards, epoch)
-
-            self.writer.add_scalar("Train/Average Conflict Penalty", avg_conflict_penalties, epoch)
-            self.writer.add_scalar("Train/Max Conflict Penalty", max_conflict_penalties, epoch)
-            self.writer.add_scalar("Train/Min Conflict Penalty", min_conflict_penalties, epoch)
-
-            self.writer.add_scalar("Train/Average Total AVG Time Wait", avg_total_avg_time_wait, epoch)
-            self.writer.add_scalar("Train/Max Total AVG Time Wait", max_total_avg_time_wait, epoch)
-            self.writer.add_scalar("Train/Min Total AVG Time Wait", min_total_avg_time_wait, epoch)
-
+            
             episode_batch = episodes[0]
             episodes.pop(0)
             for episode in episodes:
@@ -134,8 +91,10 @@ class Runner:
 
             # 保存 episode 到缓冲区
             self.buffer.store_episode(episode_batch)
-
-            logger.info(f"Epoch {epoch}: Average Reward={avg_reward:.2f}, Average Wait_time={avg_wait_time:.2f}, Estimated Wait_time per_task={avg_wait_time/avg_completed_tasks:.2f}")
+            
+            epoch_avg_rewards = epoch_avg_dict['epoch_rewards']
+            avg_qmix_max_time = epoch_avg_dict['max_shift_time_wait']
+            logger.info(f"Epoch {epoch}: AVG Reward={epoch_avg_rewards:.2f}, AVG Wait_time={qmix_avg_time:.2f}, MAX Wait_time={avg_qmix_max_time:.2f}")
             # 执行训练步骤
             
             for train_step in range(self.args.train_steps):
@@ -151,62 +110,42 @@ class Runner:
         """
         测试阶段：记录测试的指标
         """
-        total_rewards = []
-        total_wait_penalties = []
-        total_service_cost_penalties = []
-        total_conflicts = []
-        total_wait_times = []
-        total_completed_tasks = []
-        total_completion_rates = []
+        epoch_info_dict = defaultdict(list)
+        epoch_stats_type = ['concurrent_rewards','conflict_penalty','wait_penalty','service_cost_penalty',
+                            'conflicts','wait_time','shift_time_wait','random_shift_time_wait','greedy_shift_time_wait',
+                            'completed_tasks','completion_rate','allocated_rate','epsilon_value','max_shift_time_wait']
+        # 每个 epoch 收集多个 episode 的各类统计信息
+        with timer(f'generate_episode with n_episodes={self.args.n_episodes}'):
+            for _ in range(self.args.evaluate_epoch):
+                _, episode_reward, _, episode_stats = self.rolloutWorker.generate_episode(evaluate=True)
 
-        for _ in range(self.args.evaluate_epoch):
-            _, episode_reward, _, episode_stats = self.rolloutWorker.generate_episode(evaluate=True)
+                # 累加统计量
+                epoch_info_dict['epoch_rewards'].append(episode_reward)
+                epoch_info_dict['wait_times_random'].append(episode_stats["random_shift_time_wait"])
+                epoch_info_dict['wait_times_greedy'].append(episode_stats["greedy_shift_time_wait"])
+                for stat_type in epoch_stats_type:
+                    epoch_info_dict[stat_type].append(episode_stats[stat_type])
+                epoch_info_dict['total_avg_time_wait'].append(episode_stats["shift_time_wait"]/episode_stats["total_allocated_num"])
 
-            total_rewards.append(episode_reward)
-            total_wait_penalties.append(episode_stats["wait_penalty"])
-            total_service_cost_penalties.append(episode_stats["service_cost_penalty"])
-            total_conflicts.append(episode_stats["conflicts"])
-            total_wait_times.append(episode_stats["wait_time"])
-            total_completed_tasks.append(episode_stats["completed_tasks"])
-            total_completion_rates.append(episode_stats["completion_rate"])
-
-        avg_conflicts = np.mean(total_conflicts)
-        avg_wait_time = np.mean(total_wait_times)
-        avg_completed_tasks = np.mean(total_completed_tasks)
-        avg_completion_rate = np.mean(total_completion_rates)
-        # Compute statistics for this epoch
-        avg_reward = np.mean(total_rewards)
-        max_reward = np.max(total_rewards)
-        min_reward = np.min(total_rewards)
-
-        avg_wait_penalty = np.mean(total_wait_penalties)
-        max_wait_penalty = np.max(total_wait_penalties)
-        min_wait_penalty = np.min(total_wait_penalties)
-
-        avg_service_cost_penalty = np.mean(total_service_cost_penalties)
-        max_service_cost_penalty = np.max(total_service_cost_penalties)
-        min_service_cost_penalty = np.min(total_service_cost_penalties)
-
-        # 写入 TensorBoard
-        self.writer.add_scalar("Test/Conflicts", avg_conflicts, self.test_episode_count)
-        self.writer.add_scalar("Test/Wait Time", avg_wait_time, self.test_episode_count)
-        self.writer.add_scalar("Test/Completed Tasks", avg_completed_tasks, self.test_episode_count)
-        self.writer.add_scalar("Test/Completion Rate", avg_completion_rate, self.test_episode_count)
-
-        self.writer.add_scalar("Test/Average Reward", avg_reward, self.test_episode_count)
-        self.writer.add_scalar("Test/Max Reward", max_reward, self.test_episode_count)
-        self.writer.add_scalar("Test/Min Reward", min_reward, self.test_episode_count)
-
-        self.writer.add_scalar("Test/Average Wait Penalty", avg_wait_penalty, self.test_episode_count)
-        self.writer.add_scalar("Test/Max Wait Penalty", max_wait_penalty, self.test_episode_count)
-        self.writer.add_scalar("Test/Min Wait Penalty", min_wait_penalty, self.test_episode_count)
-
-        self.writer.add_scalar("Test/Average Service Cost Penalty", avg_service_cost_penalty, self.test_episode_count)
-        self.writer.add_scalar("Test/Max Service Cost Penalty", max_service_cost_penalty, self.test_episode_count)
-        self.writer.add_scalar("Test/Min Service Cost Penalty", min_service_cost_penalty, self.test_episode_count)
+        epoch_avg_dict = defaultdict(int)
+        avg_stats_type = ['conflicts','shift_time_wait','max_shift_time_wait','completed_tasks','completion_rate','epsilon_value',
+                            'epoch_rewards','concurrent_rewards','conflict_penalty','wait_penalty','service_cost_penalty',
+                            'total_avg_time_wait','wait_times_random','wait_times_greedy','total_allocated_num']
+        for avg_stat in avg_stats_type:
+            epoch_avg_dict[avg_stat] = np.mean(epoch_info_dict[avg_stat])
+            self.writer.add_scalar(f"Test/AVG {avg_stat}", epoch_avg_dict[avg_stat], self.test_episode_count)
+        
+        epoch_max_dict = defaultdict(int)
+        epoch_min_dict = defaultdict(int)
+        maxmin_stats_type = ['epoch_rewards','concurrent_rewards','conflict_penalty','wait_penalty','service_cost_penalty','total_avg_time_wait']
+        for maxmin_stat in maxmin_stats_type:
+            epoch_max_dict[maxmin_stat] = np.max(epoch_info_dict[maxmin_stat])
+            epoch_min_dict[maxmin_stat] = np.min(epoch_info_dict[maxmin_stat])
+            self.writer.add_scalar(f"Test/MAX {maxmin_stat}", epoch_max_dict[maxmin_stat], self.test_episode_count)
+            self.writer.add_scalar(f"Test/MIN {maxmin_stat}", epoch_min_dict[maxmin_stat], self.test_episode_count)
 
         self.test_episode_count += 1
-        return avg_reward, avg_wait_time
+        return epoch_avg_dict['epoch_rewards'], epoch_avg_dict['shift_time_wait']
 
 
 

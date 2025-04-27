@@ -38,9 +38,9 @@ class Robots:
         # 技能数
         self.num_skills = 5
         # 机器人名称
-        self.robot_info = ["智能轮椅机器人", "开放式递送机器人", "箱式递送机器人", "情感陪护机器人", "辅助行走机器人"]
+        self.robot_info = ["智能轮椅机器人", "开放式递送机器人", "箱式递送机器人", "通用型机器人", "辅助行走机器人"]
         # 机器人速度
-        self.speed = [1.5, 1.0, 1.0, 1.0, 1.0]
+        self.speed = [i/2 for i in [1.5, 1.0, 1.0, 0.5, 1.0]]
         # 机器人总数
         self.num_robots = 10
         # 机器人的类型
@@ -52,7 +52,7 @@ class Robots:
             [8, 30], [52, 30], [8, 10], [52, 10],  # 智能轮椅机器人
             [15, 20],                              # 开放式递送机器人
             [45, 20],                              # 私人递送机器人
-            [25, 30], [35, 10],                    # 情感陪护机器人
+            [25, 30], [35, 10],                    # 通用型机器人
             [25, 10], [35, 30]                     # 辅助行走机器人
         ])
         # [time_on_road_1, service_time, time_on_road_2]
@@ -69,15 +69,29 @@ class Robots:
     def get_skills(self, agent_id):
         robot_type_id = self.robots_type_id[agent_id]
         if robot_type_id == 0:
-            return [1, 0, 0, 0, 0]   # 类型 0：智能轮椅机器人
+            return [1, 1, 1, 1, 0]   # 类型 0：智能轮椅机器人
         if robot_type_id == 1:
-            return [0, 1, 0, 0, 0]   # 类型 1：开放式递送机器人
+            return [0, 1, 1, 1, 0]   # 类型 1：开放式递送机器人
         if robot_type_id == 2:
-            return [0, 0, 1, 0, 0]   # 类型 2：箱式递送机器人
+            return [0, 1, 1, 1, 0]   # 类型 2：箱式递送机器人
         if robot_type_id == 3:
-            return [0, 0, 0, 1, 0]   # 类型 3：情感陪护机器人
+            return [1, 1, 1, 1, 1]   # 类型 3：通用型机器人
         if robot_type_id == 4:
-            return [0, 0, 0, 0, 1]   # 类型 4：辅助行走机器人
+            return [1, 0, 0, 1, 1]   # 类型 4：辅助行走机器人
+
+    # 机器人能力系数：①辅助老人移动能力 ② 送餐能力 ③递送能力 ④ 陪伴能力 ⑤康复训练能力
+    def get_skills_coff(self, agent_id):
+        robot_type_id = self.robots_type_id[agent_id]
+        if robot_type_id == 0:
+            return [1.2, 0.5, 0.5, 0.8, 0]   # 类型 0：智能轮椅机器人
+        if robot_type_id == 1:
+            return [0, 1.2, 0.8, 0.8, 0]   # 类型 1：开放式递送机器人
+        if robot_type_id == 2:
+            return [0, 0.8, 1.2, 0.8, 0]   # 类型 2：箱式递送机器人
+        if robot_type_id == 3:
+            return [0.1, 0.5, 0.5, 1.2, 0.8]   # 类型 3：通用型机器人
+        if robot_type_id == 4:
+            return [0.5, 0, 0, 1, 1.2]   # 类型 4：辅助行走机器人
 
     # 执行任务（暂时没有考虑任务类型为1时，紧急情况的处理）
     # 输入的范围：task_id:0-6, robot_id:0-14, site_id:0-25, destination_id:0-25
@@ -100,8 +114,9 @@ class Robots:
             time_on_road_2 = count_path_on_road(self.sites.sites_pos[site_id], self.sites.sites_pos[destination_id],
                                                 speed)
         # 保留一个执行任务时，在路上的时间，在这个过程中如果突发紧急情况，可以对机器人任务进行重置，优先执行紧急任务。
-        self.robots_time[robot_id] = [time_on_road_1, service_time, time_on_road_2]
-        total_time = time_on_road_1 + service_time + time_on_road_2
+        service_coff = self.get_skills_coff(robot_id)[task_id-1]
+        self.robots_time[robot_id] = [time_on_road_1, np.ceil(service_time/service_coff), time_on_road_2]
+        total_time = time_on_road_1 + np.ceil(service_time/service_coff) + time_on_road_2
         return time_on_road_1, total_time
 
     # 更新机器人位置信息
