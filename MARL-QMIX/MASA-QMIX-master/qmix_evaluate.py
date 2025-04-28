@@ -47,9 +47,9 @@ def load_model_and_evaluate(file_path):
             total_wait_times[task_type].append(stats["shift_time_wait"])
             completion_rates[task_type].append(stats["completion_rate"])
             max_wait_times[task_type].append(stats["max_shift_time_wait"])
-            allocated_rates[task_type].append(stats["shift_allocated_num"])
+            allocated_rates[task_type].append(stats["allocated_rate"])
             logger.info(f"Run {task_type} {i + 1}: Total wait time = {stats['shift_time_wait']:.2}, completion_rate = {stats['completion_rate']:.2%}")
-            logger.info(f"Run {task_type} {i + 1}: MAX wait time = {stats['max_shift_time_wait']:.2}, total_allocated_num = {stats['total_allocated_num']:.2}")
+            logger.info(f"Run {task_type} {i + 1}: MAX wait time = {stats['max_shift_time_wait']:.2}, allocated_rate = {stats['allocated_rate']:.2%}")
     for task_type in task_type_list:
         average_wait_time = np.mean(total_wait_times[task_type])
         average_max_wait_times = np.mean(max_wait_times[task_type])
