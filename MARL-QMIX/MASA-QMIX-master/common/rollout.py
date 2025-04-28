@@ -148,7 +148,7 @@ class RolloutWorker:
             padded.append([0.])
             step += 1
 
-            if self.args.epsilon_anneal_scale == 'step':
+            if self.args.epsilon_anneal_scale == 'step' and evaluate!=True:
                 epsilon = epsilon - self.anneal_epsilon if epsilon > self.min_epsilon else epsilon
         avg_greedy_time_wait = total_greedy_shift_time_wait/total_greedy_allocated_num
         avg_random_time_wait = total_random_shift_time_wait/total_random_allocated_num

@@ -1,6 +1,7 @@
 from abc import ABC
 import gym
 from gym.utils import seeding
+from copy import deepcopy
 from utils.sites import Sites
 from utils.robots import Robots
 from utils.tasks import Tasks
@@ -361,6 +362,8 @@ class ScheduleEnv(gym.Env, ABC):
             'time':self.time,
             'total_time_wait':self.total_time_wait,
             'total_time_on_road':self.total_time_on_road,
+            'time_on_road': self.time_on_road,
+            'robots':deepcopy(self.robots),
 
         }   
     
@@ -470,6 +473,8 @@ class ScheduleEnv(gym.Env, ABC):
             self.time = freeze_dict['time']
             self.total_time_wait = freeze_dict['total_time_wait']
             self.total_time_on_road = freeze_dict['total_time_on_road']
+            self.time_on_road = freeze_dict['time_on_road']
+            self.robots = freeze_dict['robots']
         return total_reward, done, info
 
     def get_env_info(self):
