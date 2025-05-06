@@ -63,17 +63,17 @@ def generate_task(site, time):
     # 根据任务类型不同，任务执行时间设计为一个范围内的随机数，且服从均匀分布 service_time = np.random.randint(60, 120)
     # task_types = ["紧急事件", "移动辅助任务", "送餐", "私人物品递送", "情感陪护", "康复训练"]
     if task_type == 0:
-        service_time = 120
+        service_time = np.random.randint(180, 300)
     elif task_type == 1:
-        service_time = 15
+        service_time = np.random.randint(60, 120)
     elif task_type == 2:
-        service_time = 15
+        service_time = np.random.randint(60, 120)
     elif task_type == 3:
-        service_time = 15
+        service_time = np.random.randint(60, 120)
     elif task_type == 4:
-        service_time = 150
+        service_time = np.random.randint(300, 600)
     elif task_type == 5:
-        service_time = 150
+        service_time = np.random.randint(300, 600)
     task_info[4] = service_time
     return task_info
 
@@ -87,14 +87,63 @@ def generate_uniform_process(time_window, n):
     """
     return np.sort(np.random.uniform(0, time_window, n))
 
+def generate_normal_process(time_window, n, mean, std_dev):
+    """
+    生成一个正态分布的时间过程。
+    :param time_window: 总的时间区间长度（单位秒）
+    :param n: 任务的数量
+    :param mean: 正态分布的均值
+    :param std_dev: 正态分布的标准差
+    :return: 返回任务的到达时间列表
+    """
+    times = np.random.normal(mean, std_dev, n)
+    times = np.clip(times, 0, time_window)  # 确保时间在有效范围内
+    return np.sort(times)
 
-def generate_random_tasks():
-    time_intervals = np.zeros((len(LOCATIONS), 9))
+def generate_poisson_process(time_window, n, rate):
+    """
+    生成一个泊松分布的时间过程。
+    :param time_window: 总的时间区间长度（单位秒）
+    :param n: 任务的数量
+    :param rate: 每单位时间的事件发生率
+    :return: 返回任务的到达时间列表
+    """
+    times = []
+    current_time = 0
+    while len(times) < n and current_time < time_window:
+        inter_arrival_time = np.random.exponential(1 / rate)
+        current_time += inter_arrival_time
+        if current_time < time_window:
+            times.append(current_time)
+    return np.sort(times)
+
+def generate_exponential_process(time_window, n, rate):
+    """
+    生成一个指数分布的时间过程。
+    :param time_window: 总的时间区间长度（单位秒）
+    :param n: 任务的数量
+    :param rate: 每单位时间的事件发生率
+    :return: 返回任务的到达时间列表
+    """
+    times = []
+    current_time = 0
+    while len(times) < n and current_time < time_window:
+        inter_arrival_time = np.random.exponential(1 / rate)
+        current_time += inter_arrival_time
+        if current_time < time_window:
+            times.append(current_time)
+    return np.sort(times)
+
+def generate_random_tasks(task_num=15):
+    time_intervals = np.zeros((len(LOCATIONS), task_num))
     tasks = []
     # 生成多个任务
     for site in range(len(LOCATIONS)):
-        # 生成均匀分布的时间点而不是泊松分布
-        time_intervals[site] = generate_uniform_process(3000, 9)  # 3600秒内生成10个任务请求
+        # 生成均匀分布或者正态分布的时间点
+        if np.random.uniform() < 0.5:
+            time_intervals[site] = generate_uniform_process(3000, task_num)  # 3600秒内生成10个任务请求
+        else:
+            time_intervals[site] = generate_normal_process(3000, task_num, 3000/2, 500+np.random.uniform()*1000)
         for i in range(len(time_intervals[site])):
             time = time_intervals[site][i]
             task_item = generate_task(site, time)
@@ -106,6 +155,7 @@ def generate_random_tasks():
     for i in range(len(tasks)):
         tasks[i][0] -= t_0  # 使任务时间从0开始
     return tasks
+
 
 
 def generate_tasks():

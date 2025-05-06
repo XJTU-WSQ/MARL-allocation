@@ -4,7 +4,7 @@ import pickle
 
 # Create 100 sets of tasks
 all_task_sets = []
-for _ in range(1000):
+for _ in range(250):
     tasks = generate_tasks()
     all_task_sets.append(tasks)
 

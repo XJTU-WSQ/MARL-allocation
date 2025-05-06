@@ -53,13 +53,13 @@ class Agents:
             action = torch.argmax(q_value).cpu()
         return action
 
-    def choose_actions_batch(self, obs, avail_actions, epsilon, constraint_type=4):
+    def choose_actions_batch(self, obs, avail_actions, epsilon, constraint_type=3):
         """
         为所有代理选择动作
         constraint_type: 1 表示agent优先策略，每个agent根据q值最大进行选择
         constraint_type: 2 表示匈牙利算法，通过q值构建成本矩阵，根据全局q值最大进行选择
         constraint_type: 3 表示task优先策略，每个task根据q值最大进行选择
-        constraint_type: 4 表示task优先策略，每个task根据q值最大进行选择，但探索策略更保守
+        constraint_type: 4 表示task优先策略，每个task根据q值最大进行选择，但探索策略更保守(次优解容易影响收敛)
         补充：类型1中每个任务可以分配给多个agent，类型2与3中每个任务只会分配给单个agent
         """
         inputs = obs.copy()

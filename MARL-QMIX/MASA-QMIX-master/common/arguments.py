@@ -10,18 +10,18 @@ def get_common_args():
     parser.add_argument('--model_dir', type=str, default='./model', help='model directory of the policy')
     parser.add_argument('--result_dir', type=str, default='./result', help='result directory of the policy')
     parser.add_argument('--load_model', type=bool, default=False, help='whether to load the pretrained model')
-    parser.add_argument('--alg', type=str, default='qmix', help='the algorithm to train the agent')
+    parser.add_argument('--alg', type=str, default='qmix', help='the algorithm to train the agent') # 模型名称，仅用于路径配置与日志
     parser.add_argument('--last_action', type=bool, default=False, help='whether to use the last action to choose action')
     parser.add_argument('--reuse_network', type=bool, default=True, help='whether to use one network for all agents')
-    parser.add_argument('--gamma', type=float, default=0.99, help='discount factor')
-    parser.add_argument('--optimizer', type=str, default="RMS", help='optimizer')
-    parser.add_argument('--evaluate_epoch', type=int, default=50, help='number of the epoch to evaluate the agent')
+    parser.add_argument('--gamma', type=float, default=0.99, help='discount factor') # 折扣因子，原始论文默认0.99
+    parser.add_argument('--optimizer', type=str, default="Adam", help='optimizer') # 支持 RMSprop 或 Adam
+    parser.add_argument('--evaluate_epoch', type=int, default=20, help='number of the epoch to evaluate the agent')
     parser.add_argument('--learn', type=bool, default=True, help='whether to train the model')
     parser.add_argument('--cuda', type=bool, default=True, help='whether to use the GPU')
-    parser.add_argument('--map', type=str, default="Schedule", help='map name')
+    parser.add_argument('--map', type=str, default="Schedule250504", help='map name') # 仅用于模型存储路径
     parser.add_argument('--log_step_data', type=bool, default=False, help='Log step data for debugging')
     parser.add_argument("--use_tensorboard", type=bool, default=True, help="Enable TensorBoard logging")
-    parser.add_argument("--run_name", type=str, default="default_run", help="Name of the current run")
+    parser.add_argument("--run_name", type=str, default="default_run", help="Name of the current run") # 仅用于tensorboard任务标识 
     args = parser.parse_args()
     return args
 
@@ -35,14 +35,14 @@ def get_mixer_args(args):
     args.hyper_hidden_dim = 128
     # 学习率与探索
     args.lr = 1e-4  #
-    args.epsilon = 1.0  # 初始探索率不变
+    args.epsilon = 0.9  # 初始探索率不变
     args.min_epsilon = 0.1  #
-    anneal_steps = 600000  # 原为 200000，缩短衰减周期
+    anneal_steps = 5000*120*8  # 原为 200000，缩短衰减周期(epochs=5000,max_steps_limit_per_episode=120,n_episodes=8)
     args.anneal_epsilon = (args.epsilon - args.min_epsilon) / anneal_steps
     args.epsilon_anneal_scale = 'step'
 
     # 训练总轮数与每轮收集
-    args.n_epoch = 10000  # 原为 10000，先试 6000，看训练曲线后再调整
+    args.n_epoch = 10002  # 原为 10000，先试 6000，看训练曲线后再调整
     args.n_episodes = 8  # 保持不变，每轮收集 8 个 episode 的数据
 
     # 每轮训练步数
@@ -50,7 +50,7 @@ def get_mixer_args(args):
 
     # 评估、保存与目标网络更新
     args.evaluate_cycle = 100  # 原为 50，评估不必过于频繁
-    args.save_cycle = 1000  # 原为 50，保存过于频繁会产生日志冗余
+    args.save_cycle = 200  # 原为 50，保存过于频繁会产生日志冗余
     args.target_update_cycle = 200
 
     # 经验回放

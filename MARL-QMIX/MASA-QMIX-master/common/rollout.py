@@ -59,6 +59,10 @@ class RolloutWorker:
         max_random_time_wait = 0
         max_greedy_time_wait = 0
 
+        max_shift_time_list = []
+        max_random_time_list = []
+        max_greedy_time_list = []       
+
         total_shift_allocated_num = 0
         total_random_allocated_num = 0
         total_greedy_allocated_num = 0
@@ -66,7 +70,7 @@ class RolloutWorker:
         total_shift_completed_num = 0
         total_random_completed_num = 0
         total_greedy_completed_num = 0
-
+        tmp_num = 0
         while not terminated and step < self.episode_limit:
 
             self.env.update_task_window()
@@ -112,6 +116,9 @@ class RolloutWorker:
             max_shift_time_wait = max(max_shift_time_wait, info["max_time_wait"])
             max_random_time_wait = max(max_random_time_wait, random_info["max_time_wait"])
             max_greedy_time_wait = max(max_greedy_time_wait, greedy_info["max_time_wait"])
+            max_shift_time_list.append(info["max_time_wait"])
+            max_random_time_list.append(random_info["max_time_wait"])
+            max_greedy_time_list.append(greedy_info["max_time_wait"])
 
             total_shift_allocated_num += info["shift_allocated_num"]
             total_random_allocated_num += random_info["shift_allocated_num"]
@@ -150,14 +157,15 @@ class RolloutWorker:
 
             if self.args.epsilon_anneal_scale == 'step' and evaluate!=True:
                 epsilon = epsilon - self.anneal_epsilon if epsilon > self.min_epsilon else epsilon
+                tmp_num += 1
         avg_greedy_time_wait = total_greedy_shift_time_wait/total_greedy_allocated_num
         avg_random_time_wait = total_random_shift_time_wait/total_random_allocated_num
         avg_qmix_time_wait = total_shift_time_wait/total_shift_allocated_num
-        episode_reward = relative_reward(-avg_qmix_time_wait, -avg_greedy_time_wait, -avg_random_time_wait, self.epsilon)
-        episode_reward2 = relative_reward(-max_shift_time_wait, -max_greedy_time_wait, -max_random_time_wait, self.epsilon)
+        episode_reward = relative_reward(1/avg_qmix_time_wait, 1/avg_greedy_time_wait, 1/avg_random_time_wait, self.epsilon)
+        episode_reward2 = relative_reward(1/max_shift_time_wait, 1/max_greedy_time_wait, 1/max_random_time_wait, self.epsilon)
         episode_reward3 = relative_reward(total_shift_allocated_num, total_random_allocated_num, total_greedy_allocated_num, self.epsilon)
         episode_reward4 = relative_reward(total_shift_completed_num, total_random_completed_num, total_greedy_completed_num, self.epsilon)
-        episode_reward = episode_reward + episode_reward2 + 0.1*episode_reward3 + episode_reward4
+        episode_reward = episode_reward + episode_reward2
         # 全局奖励：考虑平均等待时间，已分配任务数和已完成任务数
         # last obs
         obs = self.env.get_obs()
@@ -262,17 +270,16 @@ def convert_to_native(obj):
     elif isinstance(obj, dict):
         return {k: convert_to_native(v) for k, v in obj.items()}  # 递归处理字典
     else:
-        return obj  # 返回原始值
-
+        return obj  # 返回
 
 def relative_reward(a, b, c, epsilon):
     # 根据 b 和 c 构建基线，评估 a 所处位置并用于奖励的计算
-    baseline_lower = min(b, c)+(1.1-epsilon)*abs(b-c)
-    baseline_upper = max(b, c)+(1.1-epsilon)*abs(b-c)
-    one_level_range = abs(b-c)/10+1
+    baseline_lower = min(b, c)+(0.9-epsilon)*abs(b-c)
+    baseline_upper = max(b, c)+(0.9-epsilon)*abs(b-c)
+    one_level_range = max(a,b)
     if a < baseline_lower:
-        return -5-5*(baseline_lower - a)/(one_level_range)
+        return -2*(baseline_lower - a)/(one_level_range)
     elif a > baseline_upper:
-        return 5+5*(a - baseline_upper)/(one_level_range)
+        return 2*(a - baseline_upper)/(one_level_range)
     else:
-        return (a - baseline_lower)/one_level_range - 5
+        return (a - baseline_lower)/one_level_range

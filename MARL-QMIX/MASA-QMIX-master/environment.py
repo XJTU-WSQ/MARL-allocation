@@ -360,6 +360,7 @@ class ScheduleEnv(gym.Env, ABC):
             'tasks_completed':self.tasks_completed.copy(),
             'tasks_allocated':self.tasks_allocated.copy(),
             'time':self.time,
+            'time_wait':self.time_wait.copy(),
             'total_time_wait':self.total_time_wait,
             'total_time_on_road':self.total_time_on_road,
             'time_on_road': self.time_on_road,
@@ -451,6 +452,8 @@ class ScheduleEnv(gym.Env, ABC):
         shift_completed_num = sum(self.tasks_completed)-sum(freeze_dict['tasks_completed'])
         # logger.info(f'shift_time_wait:{shift_time_wait} shift_allocated_num:{shift_allocated_num} shift_completed_num:{shift_completed_num} ')
         # logger.info(f'shift_time_wait:{shift_time_wait} sum_allocated_num:{sum(self.tasks_allocated)} sum_completed_num:{sum(self.tasks_completed)} ')
+        time_wait_list = [i[0]+i[1] for i in zip(self.time_wait,self.time_on_road)]
+        curr_time_wait_list = [time_wait_list[i] for i in range(len(time_wait_list)) if freeze_dict['tasks_allocated'][i]==0 and self.tasks_allocated[i]==1]
         info = {
             "robots_state": self.robots_state,
             "task_window": self.task_window,
@@ -461,7 +464,7 @@ class ScheduleEnv(gym.Env, ABC):
             "total_wait_penalty": total_wait_penalty,
             "done": done,
             'shift_time_wait': shift_time_wait,
-            'max_time_wait': np.max([i[0]+i[1] for i in zip(self.time_wait,self.time_on_road)]),
+            'max_time_wait': np.max(curr_time_wait_list) if len(curr_time_wait_list)>0 else 0,
             'shift_allocated_num':shift_allocated_num,
             'shift_completed_num':shift_completed_num,
         }
@@ -474,6 +477,7 @@ class ScheduleEnv(gym.Env, ABC):
             self.total_time_wait = freeze_dict['total_time_wait']
             self.total_time_on_road = freeze_dict['total_time_on_road']
             self.time_on_road = freeze_dict['time_on_road']
+            self.time_wait = freeze_dict['time_wait']
             self.robots = freeze_dict['robots']
         return total_reward, done, info
 
@@ -486,6 +490,6 @@ class ScheduleEnv(gym.Env, ABC):
             "n_agents": self.robots.num_robots,  # 机器人数量
             "state_shape": len(self.get_state()),  # 全局状态向量的长度
             "obs_shape": self.obs_shape,  # 动态观测维度
-            "episode_limit": 120
+            "episode_limit": 240
         }
 
