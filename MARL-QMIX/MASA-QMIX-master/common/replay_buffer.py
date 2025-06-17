@@ -1,6 +1,6 @@
 import numpy as np
 import threading
-
+from loguru import logger
 
 class ReplayBuffer:
     def __init__(self, args):
@@ -55,6 +55,16 @@ class ReplayBuffer:
             temp_buffer[key] = self.buffers[key][idx]
         return temp_buffer
 
+    def sample_probabilistic(self, batch_size):
+        """
+        使用概率方法采样样本
+        """
+        temp_buffer = {}
+        replace_idxs = self._get_probabilistic_idx(batch_size)
+        for key in self.buffers.keys():
+            temp_buffer[key] = self.buffers[key][replace_idxs]
+        return temp_buffer
+    
     def _get_storage_idx(self, inc=None):
         inc = inc or 1
         if self.current_idx + inc <= self.size:
@@ -73,3 +83,30 @@ class ReplayBuffer:
         if inc == 1:
             idx = idx[0]
         return idx
+
+    def _get_probabilistic_idx(self, batch_size):
+        """
+        基于奖励值概率选择要抽取的样本
+        """
+        try:
+            # 获取当前缓冲区中的所有奖励
+            current_rewards = self.buffers['r'][:self.current_size,-1,]
+            
+            probs = abs(current_rewards)+0.1 # 确保值为正
+            probs = probs / np.sum(probs) # 归一化概率
+            probs = 1 - probs # 绝对值越大，被选中删除的可能性越小
+            probs = probs / np.sum(probs)
+            probs = np.asarray(probs).flatten() # 确保 probs 是一维数组
+
+            # 根据概率随机选择要替换的索引
+            sample_idxs = np.random.choice(
+                np.arange(self.current_size), 
+                size=batch_size, 
+                replace=False,  # 不重复选择
+                p=probs
+            )
+        except Exception as e:
+            logger.error(f"Error in _get_probabilistic_idx: {e}")
+            # 如果发生错误，改为简单的随机抽样
+            sample_idxs = np.random.randint(0, self.current_size, batch_size)
+        return sample_idxs

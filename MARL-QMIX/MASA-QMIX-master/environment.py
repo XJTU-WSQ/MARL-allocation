@@ -1,5 +1,6 @@
 from abc import ABC
 import gym
+import random
 from gym.utils import seeding
 from copy import deepcopy
 from utils.sites import Sites
@@ -16,8 +17,9 @@ class ScheduleEnv(gym.Env, ABC):
         self.sites = Sites()
         self.robots = Robots()
         self.tasks = Tasks()
-        # 机器人状态信息 : 1占用，0空闲
-        self.robots_state = [0 for _ in range(self.robots.num_robots)]
+        
+        # self.robots_state = [0 for _ in range(self.robots.num_robots)]
+        # self.robots_work_times = [0 for _ in range(self.robots.num_robots)]
         # 奖励函数的权重
         self.concurrent_reward_weight = 5.5
         self.wait_penalty_weight = -0.1  # 等待一个任务就进行一个惩罚
@@ -27,52 +29,42 @@ class ScheduleEnv(gym.Env, ABC):
         self.tasks_array = task_generator.generate_tasks()
         # task： Task index|Time|Location|Task Type|Target|Duration
         self.task_window_size = 10
-        self.locked_tasks = [0] * self.task_window_size  # 记录任务锁定状态
-        self.time_wait = [0 for _ in range(len(self.tasks_array))]
-        self.total_time_wait = 0
-        self.total_time_on_road = 0
-        self.tasks_completed = [0 for _ in range(len(self.tasks_array))]
-        self.tasks_allocated = [0 for _ in range(len(self.tasks_array))]
-        self.unallocated_tasks = set(range(len(self.tasks_array)))  # 未分配任务集合
-        self.task_window = np.array([[0 for _ in range(6)] for _ in range(self.task_window_size)])
-        # 环境相关参数
-        self.cached_obs4marl = None
-        self.time = 0.
-        self.done = False
-        self.state4marl = [0 for _ in range(len(self.get_state()))]
-        # 动态获取 obs_shape
-        temp_avail_action = [0] * (self.task_window_size + 1)
-        temp_obs = self.get_agent_obs(0, temp_avail_action)
-        self.obs_shape = len(temp_obs)  # 动态观测维度
-        # 初始化 obs4marl
-        self.obs4marl = np.zeros((self.robots.num_robots, self.obs_shape), dtype=np.float32)
-        self.robot_task_assignments = [[] for _ in range(self.robots.num_robots)]
+        self.reset()  # 初始化环境
 
     def reset(self):
         """
         环境重置，初始化所有参数。
         """
         # 任务信息初始化
-        self.task_window_size = 10
         self.time_wait = [0 for _ in range(len(self.tasks_array))]
         self.time_on_road = [0 for _ in range(len(self.tasks_array))]
+        self.service_time = [0 for _ in range(len(self.tasks_array))]
+        self.service_coff = [0 for _ in range(len(self.tasks_array))]
         self.total_time_wait = 0
         self.total_time_on_road = 0
+        self.total_time_on_road2 = 0
+        self.total_service_time = 0
         self.tasks_completed = [0 for _ in range(len(self.tasks_array))]
         self.tasks_allocated = [0 for _ in range(len(self.tasks_array))]
-        self.unallocated_tasks = set(range(len(self.tasks_array)))
+        self.unallocated_tasks = set(range(len(self.tasks_array))) # 未分配任务集合
         self.task_window = [[0 for _ in range(6)] for _ in range(self.task_window_size)]
+
+        # 机器人信息初始化
+        self.robots.robot_pos = self.robots.robot_sites_pos
+        random.shuffle(self.robots.robot_pos)
+        self.robots_state = [0 for _ in range(self.robots.num_robots)] # 机器人状态信息 : 1占用，0空闲
+        self.robots_work_times = [0 for _ in range(self.robots.num_robots)]
+        self.robots.robots_tasks_info = np.zeros([self.robots.num_robots, 6], dtype=int)
+        
+        # 动态获取 obs_shape
+        temp_avail_action = [0] * (self.task_window_size + 1)
+        temp_obs = self.get_agent_obs(0, temp_avail_action)
+        self.obs_shape = len(temp_obs)  # 动态观测维度
 
         # 环境参数初始化
         self.time = 0.0
         self.done = False
         self.state4marl = [0 for _ in range(len(self.get_state()))]
-
-        # 机器人信息初始化
-        self.robots.robot_pos = self.robots.robot_sites_pos
-        self.robots_state = [0 for _ in range(self.robots.num_robots)]
-
-        # 初始化 obs4marl
         self.obs4marl = np.zeros((self.robots.num_robots, self.obs_shape), dtype=np.float32)
         self.robot_task_assignments = [[] for _ in range(self.robots.num_robots)]
         self.update_task_window()
@@ -127,6 +119,7 @@ class ScheduleEnv(gym.Env, ABC):
         # 添加机器人状态信息（机器人归一化位置信息，以及机器人状态信息）
         for robot_id in range(self.robots.num_robots):
             state.append(self.robots_state[robot_id])
+            state.append(self.robots_work_times[robot_id])
             state.append(self.robots.robot_pos[robot_id][0] / max_pos_value)
             state.append(self.robots.robot_pos[robot_id][1] / max_pos_value)
 
@@ -178,6 +171,8 @@ class ScheduleEnv(gym.Env, ABC):
         # 1. 添加机器人自身信息(状态信息和归一化位置信息)
         normalized_robot_pos = [robot_pos[0] / max_pos_value, robot_pos[1] / max_pos_value]
         observation.append(self.robots_state[robot_id])  # 状态信息
+        observation.append(self.robots_work_times[robot_id])  # 状态信息
+
         observation.extend(normalized_robot_pos)  # 归一化位置信息
         robot_type_onehot = [0 for i in range(len(self.robots.robot_info))]
         robot_type_onehot[robot_type_id] = 1
@@ -187,7 +182,7 @@ class ScheduleEnv(gym.Env, ABC):
         task_features = []
         for i, task in enumerate(self.task_window):
             if all(x == 0 for x in task) or avail_action[i] == 0:  # 占位符任务或不可执行
-                task_features.append([0.0, 0.0, 0.0, 0.0])  # 占位符
+                task_features.append([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])  # 占位符
             else:
                 [task_index, _, site_id, task_type, destination_id, _] = task
                 if task_type == 2 or task_type == 3:
@@ -201,11 +196,15 @@ class ScheduleEnv(gym.Env, ABC):
                 # 归一化距离和等待时间
                 dis = (abs(robot_pos[0] - destination_pos[0]) + abs(robot_pos[1] - destination_pos[1])) / max_distance
                 wait_time = self.time_wait[task_index] / max_wait_time
-                task_features.append([task_x, task_y, dis, wait_time])
+                task_tyep_features = [0 for i in range(len(self.tasks.task_info))]
+                task_tyep_features[task_type] =1
+                buff_skills_coff_mean = self.robots.get_buff_skills_coff_mean(robot_id, task_type)
+                buff_skills_coff_std = self.robots.get_buff_skills_coff_std(robot_id, task_type)
+                task_features.append([task_x, task_y, dis, wait_time, buff_skills_coff_mean, buff_skills_coff_std]+task_tyep_features)
 
         # 如果任务数量少于任务窗口大小，填充占位符
         while len(task_features) < max_task_window_size:
-            task_features.append([0.0, 0.0, 0.0, 0.0])
+            task_features.append([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
 
         # 截取到固定任务窗口大小
         task_features = task_features[:max_task_window_size]
@@ -222,13 +221,13 @@ class ScheduleEnv(gym.Env, ABC):
 
         # 获取当前类型其他机器人的位置信息
         same_type_robot_positions = [
-            [self.robots.robot_pos[r_id][0], self.robots.robot_pos[r_id][1], self.robots_state[r_id]]
-            for r_id in range(self.robots.num_robots)
-            if self.robots.robots_type_id[r_id] == robot_type_id and r_id != robot_id
+            [self.robots.robot_pos[r_id][0], self.robots.robot_pos[r_id][1], self.robots_state[r_id], self.robots_work_times[r_id]]+list(self.robots.robots_tasks_info[r_id])
+            for r_id in range(self.robots.num_robots) # 改为考虑所有机器的信息
         ]
         for pos in same_type_robot_positions:
-            normalized_pos = [pos[0] / max_pos_value, pos[1] / max_pos_value,  pos[2]]
+            normalized_pos = [pos[0] / max_pos_value, pos[1] / max_pos_value, pos[2], pos[3]]
             observation.extend(normalized_pos)
+            observation.extend(pos[4:])
 
         # 计算需要填充的占位符数量
         padding_count = max_same_type_robots - len(same_type_robot_positions)
@@ -237,11 +236,11 @@ class ScheduleEnv(gym.Env, ABC):
         if padding_count > 0:
             observation.extend([0.0, 0.0, 0.0] * padding_count)
 
-        # observation 57 = 
-        # 3 = 当前机器人状态，位置（x,y)
+        # observation 279 = 
+        # 4 = 当前机器人状态，位置（x,y),任务已耗时
         # 5 = 机器人类别信息
-        # 40 = 10 * 任务信息（x,y,距离，已等待时间）
-        # 9 = 3*同类型机器人状态，位置（x,y)
+        # 120 = 60 + 60 = 10 * 任务信息（x,y,距离，已等待时间, 经验耗时均值，经验耗时标准差）+ 10*任务类型（one-hot, nums=6）
+        # 150 = 15*(4+6) -> 其他所有机器人状态，位置（x,y),任务已耗时,任务类型（one-hot, nums=6）
         return np.array(observation, dtype=np.float32)
 
     def get_avail_agent_actions(self, agent_id):
@@ -309,22 +308,24 @@ class ScheduleEnv(gym.Env, ABC):
         self.update_task_window()
         self.renew_wait_time()
 
-        actions = []
+        actions = [-1 for i in range(self.robots.num_robots)]
+        robot_ids_list = list(range(self.robots.num_robots))
+        random.shuffle(robot_ids_list)
         if baseline_type == 'random':
             # Update the environment's task window and wait times
-            for robot_id in range(self.robots.num_robots):
+            for robot_id in robot_ids_list:
                 available_actions = self.get_avail_agent_actions(robot_id)
 
                 # Randomly choose a valid action (including "do nothing")
                 valid_actions = [action for action, available in enumerate(available_actions) if available == 1]
-                actions.append(np.random.choice(valid_actions))
+                actions[robot_id] = np.random.choice(valid_actions)
         elif baseline_type == 'greedy':
             robot_positions = self.robots.robot_pos
             task_window = self.task_window
-            actions = []
 
             # Assign the closest task to each robot
-            for robot_id, robot_pos in enumerate(robot_positions):
+            for robot_id in robot_ids_list:
+                robot_pos = robot_positions[robot_id]
                 closest_task = None
                 min_distance = float('inf')
 
@@ -344,10 +345,10 @@ class ScheduleEnv(gym.Env, ABC):
                         closest_task = task_index
                         min_distance = distance
                 # If no suitable task is found, choose the "do nothing" action
-                actions.append(closest_task if closest_task is not None else len(task_window))
+                actions[robot_id] = closest_task if closest_task is not None else len(task_window)
         return actions
 
-    def step(self, actions, freeze_env=False):
+    def step(self, actions):
         """
         执行智能体的动作，更新环境状态，并计算综合奖励。
         """
@@ -355,17 +356,21 @@ class ScheduleEnv(gym.Env, ABC):
         conflict_penalty = 0
         total_service_cost_penalty = 0
         total_wait_penalty = 0
+        service_coff_list = []
         freeze_dict = {
             'robots_state':self.robots_state,
+            'robots_work_times': self.robots_work_times,
             'tasks_completed':self.tasks_completed.copy(),
             'tasks_allocated':self.tasks_allocated.copy(),
             'time':self.time,
             'time_wait':self.time_wait.copy(),
             'total_time_wait':self.total_time_wait,
             'total_time_on_road':self.total_time_on_road,
+            'total_service_time':self.total_service_time,
             'time_on_road': self.time_on_road,
+            'service_time': self.service_time,
+            'service_coff': self.service_coff,
             'robots':deepcopy(self.robots),
-
         }   
     
         
@@ -385,10 +390,12 @@ class ScheduleEnv(gym.Env, ABC):
         # 更新所有忙碌机器人状态
         for robot_id in range(self.robots.num_robots):
             if self.robots_state[robot_id] == 1:  # 忙碌机器人
+                self.robots_work_times[robot_id] += 1
                 task_info = self.robots.robots_tasks_info[robot_id]
                 finished = self.robots.renew_position(robot_id, task_info[3], task_info[2], task_info[4], time_step)
                 if finished:
                     self.robots_state[robot_id] = 0
+                    self.robots_work_times[robot_id] = 0
                     self.tasks_completed[task_info[0]] = 1  # 标记任务完成
 
         # 遍历所有机器人动作，分配任务并记录任务分配
@@ -413,10 +420,13 @@ class ScheduleEnv(gym.Env, ABC):
                 chosen_agent = agents[0]  # 选择距离最近的机器人执行任务
                 for agent_id in agents:
                     if agent_id == chosen_agent:
-                        time_on_road, total_time = self.robots.execute_task(agent_id, task)
+                        time_on_road, service_time, time_on_road2,service_coff = self.robots.execute_task(agent_id, task)
                         self.robots_state[agent_id] = 1
                         self.tasks_allocated[task[0]] = 1
                         self.time_on_road[task[0]] = time_on_road
+                        self.service_time[task[0]] = service_time
+                        self.service_coff[task[0]] = service_coff
+                        service_coff_list.append(service_coff)
                         total_service_cost_penalty += time_on_road * self.service_cost_penalty_weight
                     else:
                         # 对冲突机器人进行检查，如果可以执行未分配任务但未执行，则惩罚
@@ -431,23 +441,31 @@ class ScheduleEnv(gym.Env, ABC):
             else:  # 没有冲突
                 agent_id = agents[0]
                 task = self.task_window[task_index]
-                time_on_road, total_time = self.robots.execute_task(agent_id, task)
+                time_on_road, service_time, time_on_road2,service_coff = self.robots.execute_task(agent_id, task)
                 self.robots_state[agent_id] = 1
                 self.tasks_allocated[task[0]] = 1
                 self.time_on_road[task[0]] = time_on_road
+                self.service_time[task[0]] = service_time
+                self.service_coff[task[0]] = service_coff
+                service_coff_list.append(service_coff)
                 total_service_cost_penalty += time_on_road * self.service_cost_penalty_weight
             self.total_time_on_road += time_on_road
+            self.total_time_on_road2 += time_on_road2
+            self.total_service_time += service_time
         # 更新时间步
         self.time += time_step
         self.total_time_wait = sum(self.time_wait) + self.total_time_on_road  # 累计等待时间
+        self.total_time_service = sum(self.time_wait) + self.total_time_on_road + self.total_time_on_road2 + self.total_service_time # 服务完成时间
         done = self.time > self.tasks_array[-1][1] and sum(self.tasks_completed) == len(self.tasks_array)
         
         concurrent_rewards = self.calc_concurrent_rewards(task_allocation)
         total_wait_penalty = self.calc_total_wait_penalty()
         # 综合奖励（90 -35/1.5 -120/2 -30）
         # 完成分配的任务比例(旧) + 机器人冲突惩罚 + 服务距离惩罚 + 等待任务量惩罚
-        total_reward = concurrent_rewards + conflict_penalty + total_service_cost_penalty + total_wait_penalty
+        total_reward = np.mean(service_coff_list) if len(service_coff_list)>0 else 0.5# concurrent_rewards + conflict_penalty + total_service_cost_penalty + total_wait_penalty
         shift_time_wait = self.total_time_wait - freeze_dict['total_time_wait']
+        shift_time_on_road = self.total_time_on_road - freeze_dict['total_time_on_road']
+        shift_service_time = self.total_service_time - freeze_dict['total_service_time']
         shift_allocated_num = sum(self.tasks_allocated)-sum(freeze_dict['tasks_allocated'])
         shift_completed_num = sum(self.tasks_completed)-sum(freeze_dict['tasks_completed'])
         # logger.info(f'shift_time_wait:{shift_time_wait} shift_allocated_num:{shift_allocated_num} shift_completed_num:{shift_completed_num} ')
@@ -456,7 +474,14 @@ class ScheduleEnv(gym.Env, ABC):
         curr_time_wait_list = [time_wait_list[i] for i in range(len(time_wait_list)) if freeze_dict['tasks_allocated'][i]==0 and self.tasks_allocated[i]==1]
         info = {
             "robots_state": self.robots_state,
+            "robots_work_times": self.robots_work_times,
             "task_window": self.task_window,
+            "tasks_completed": self.tasks_completed,
+            "tasks_allocated": self.tasks_allocated,
+            "time_on_road": self.time_on_road,
+            "time_wait": self.time_wait,
+            "service_time": self.service_time,
+            "service_coff":self.service_coff,
             "concurrent_rewards": concurrent_rewards,
             "conflict_count": conflict_count,
             "conflict_penalty": conflict_penalty,
@@ -467,18 +492,9 @@ class ScheduleEnv(gym.Env, ABC):
             'max_time_wait': np.max(curr_time_wait_list) if len(curr_time_wait_list)>0 else 0,
             'shift_allocated_num':shift_allocated_num,
             'shift_completed_num':shift_completed_num,
+            'shift_time_on_road':shift_time_on_road,
+            'shift_service_time':shift_service_time,
         }
-
-        if freeze_env == True:
-            self.robots_state = freeze_dict['robots_state']
-            self.tasks_completed = freeze_dict['tasks_completed']
-            self.tasks_allocated = freeze_dict['tasks_allocated']
-            self.time = freeze_dict['time']
-            self.total_time_wait = freeze_dict['total_time_wait']
-            self.total_time_on_road = freeze_dict['total_time_on_road']
-            self.time_on_road = freeze_dict['time_on_road']
-            self.time_wait = freeze_dict['time_wait']
-            self.robots = freeze_dict['robots']
         return total_reward, done, info
 
     def get_env_info(self):
@@ -490,6 +506,6 @@ class ScheduleEnv(gym.Env, ABC):
             "n_agents": self.robots.num_robots,  # 机器人数量
             "state_shape": len(self.get_state()),  # 全局状态向量的长度
             "obs_shape": self.obs_shape,  # 动态观测维度
-            "episode_limit": 240
+            "episode_limit": 120
         }
 

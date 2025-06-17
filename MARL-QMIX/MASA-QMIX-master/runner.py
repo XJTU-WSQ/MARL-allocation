@@ -39,13 +39,14 @@ class Runner:
         train_steps = 0
         for epoch in range(self.args.n_epoch):
             # 显示输出
-            if epoch % self.args.evaluate_cycle == 1:  # 确保测试在模型文件更新之后
+            if epoch > 100 and epoch % self.args.evaluate_cycle == 1:  # 确保测试在模型文件更新之后
                 episode_reward, wait_time = self.evaluate()
                 logger.info(f'Test evaluate_average_reward:{episode_reward:.2f}, evaluate_average_wait_time:{wait_time:.2f} epoch:{epoch:.2f}')
             epoch_info_dict = defaultdict(list)
             epoch_stats_type = ['concurrent_rewards','conflict_penalty','wait_penalty','service_cost_penalty',
-                                'conflicts','wait_time','shift_time_wait','random_shift_time_wait','greedy_shift_time_wait',
-                                'completed_tasks','completion_rate','allocated_rate','epsilon_value','max_shift_time_wait']
+                                'conflicts','shift_time_wait','random_shift_time_wait','greedy_shift_time_wait',
+                                'completed_tasks','completion_rate','allocated_rate','epsilon_value','max_shift_time_wait',
+                                'shift_time_on_road','shift_service_time','total_completed_time']
             # 每个 epoch 收集多个 episode 的各类统计信息
             episodes = []
             with timer(f'generate_episode with n_episodes={self.args.n_episodes}'):
@@ -63,7 +64,7 @@ class Runner:
             epoch_avg_dict = defaultdict(int)
             avg_stats_type = ['conflicts','shift_time_wait','max_shift_time_wait','completed_tasks','completion_rate','epsilon_value',
                               'epoch_rewards','concurrent_rewards','conflict_penalty','wait_penalty','service_cost_penalty',
-                              'total_avg_time_wait','wait_times_random','wait_times_greedy']
+                              'total_avg_time_wait','wait_times_random','wait_times_greedy','shift_time_on_road','shift_service_time','total_completed_time']
             for avg_stat in avg_stats_type:
                 epoch_avg_dict[avg_stat] = np.mean(epoch_info_dict[avg_stat])
                 self.writer.add_scalar(f"Train/AVG {avg_stat}", epoch_avg_dict[avg_stat], epoch)
@@ -95,14 +96,14 @@ class Runner:
             epoch_avg_rewards = epoch_avg_dict['epoch_rewards']
             avg_qmix_max_time = epoch_avg_dict['max_shift_time_wait']
             logger.info(f"Epoch {epoch}: AVG Reward={epoch_avg_rewards:.2f}, AVG Wait_time={qmix_avg_time:.2f}, MAX Wait_time={avg_qmix_max_time:.2f}")
-            # 执行训练步骤
-            
-            for train_step in range(self.args.train_steps):
-                logger.info(f" buffer size={self.buffer.current_size:.2f}, batch_size={self.args.batch_size:.2f}")
-                mini_batch = self.buffer.sample(min(self.buffer.current_size, self.args.batch_size))
-                with timer(f'train with train_steps={self.args.train_steps}'):
-                    self.agents.train(mini_batch, train_steps)
-                train_steps += 1
+            # 执行训练步骤(buffer 小于200 没必要训练)
+            if self.buffer.current_size > 200:
+                for train_step in range(self.args.train_steps):
+                    logger.info(f" buffer size={self.buffer.current_size:.2f}, batch_size={self.args.batch_size:.2f}")
+                    mini_batch = self.buffer.sample_probabilistic(min(self.buffer.current_size, self.args.batch_size))
+                    with timer(f'train with train_steps={self.args.train_steps}'):
+                        self.agents.train(mini_batch, train_steps)
+                    train_steps += 1
 
         self.writer.close()
 
@@ -111,8 +112,8 @@ class Runner:
         测试阶段：记录测试的指标
         """
         epoch_info_dict = defaultdict(list)
-        epoch_stats_type = ['concurrent_rewards','conflict_penalty','wait_penalty','service_cost_penalty',
-                            'conflicts','wait_time','shift_time_wait','random_shift_time_wait','greedy_shift_time_wait',
+        epoch_stats_type = ['concurrent_rewards','conflict_penalty','shift_time_on_road','shift_service_time','total_completed_time',#'wait_penalty','service_cost_penalty',
+                            'conflicts','shift_time_wait','random_shift_time_wait','greedy_shift_time_wait',
                             'completed_tasks','completion_rate','allocated_rate','epsilon_value','max_shift_time_wait']
         # 每个 epoch 收集多个 episode 的各类统计信息
         with timer(f'generate_episode with n_episodes={self.args.n_episodes}'):
@@ -129,7 +130,7 @@ class Runner:
 
         epoch_avg_dict = defaultdict(int)
         avg_stats_type = ['conflicts','shift_time_wait','max_shift_time_wait','completed_tasks','completion_rate','epsilon_value',
-                            'epoch_rewards','concurrent_rewards','conflict_penalty','wait_penalty','service_cost_penalty',
+                            'epoch_rewards','concurrent_rewards','conflict_penalty','shift_time_on_road','shift_service_time','total_completed_time',#'wait_penalty','service_cost_penalty',
                             'total_avg_time_wait','wait_times_random','wait_times_greedy','total_allocated_num']
         for avg_stat in avg_stats_type:
             epoch_avg_dict[avg_stat] = np.mean(epoch_info_dict[avg_stat])
@@ -137,7 +138,8 @@ class Runner:
         
         epoch_max_dict = defaultdict(int)
         epoch_min_dict = defaultdict(int)
-        maxmin_stats_type = ['epoch_rewards','concurrent_rewards','conflict_penalty','wait_penalty','service_cost_penalty','total_avg_time_wait']
+        maxmin_stats_type = ['epoch_rewards','concurrent_rewards','conflict_penalty',#'wait_penalty','service_cost_penalty',
+                             'total_avg_time_wait']
         for maxmin_stat in maxmin_stats_type:
             epoch_max_dict[maxmin_stat] = np.max(epoch_info_dict[maxmin_stat])
             epoch_min_dict[maxmin_stat] = np.min(epoch_info_dict[maxmin_stat])

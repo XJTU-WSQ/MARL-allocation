@@ -14,6 +14,7 @@ case 3  "送餐"       和   "私人物品配送"        ：先去任务目标�
 import numpy as np
 import random
 import unicodedata
+from loguru import logger 
 
 TASK_INFO = ["Emergency", "Mobility Assistance Task", "Meal Delivery", "Personal Item Delivery", "Emotional Accompaniment", "Rehabilitation Training"]
 
@@ -22,14 +23,14 @@ LOCATIONS = ["Room1", "Room2", "Room3", "Room4", "Room5", "Room6", "Room7", "Roo
 
 TASK_TYPES = {
     "general": [1, 2, 3, 4, 5],
-    "canteen": [1, 4, 5],
-    "toilet":  [1, 5]
+    "canteen": [1, 2, 3, 4, 5],
+    "toilet":  [1, 3, 5]
 }
-
+# "移动辅助任务", "送餐", "私人物品递送", "情感陪护", "康复训练"
 TASK_PROBABILITIES = {
-    "general": [0.6, 0.1, 0.1, 0.1, 0.1],
-    "canteen": [0.6, 0.2, 0.2],
-    "toilet":  [0.8, 0.2]
+    "general": [0.3, 0.2, 0.2, 0.2, 0.1],
+    "canteen": [0.2, 0.4, 0.2, 0.1, 0.1],
+    "toilet":  [0.6, 0.1, 0.3]
 }
 
 
@@ -63,17 +64,18 @@ def generate_task(site, time):
     # 根据任务类型不同，任务执行时间设计为一个范围内的随机数，且服从均匀分布 service_time = np.random.randint(60, 120)
     # task_types = ["紧急事件", "移动辅助任务", "送餐", "私人物品递送", "情感陪护", "康复训练"]
     if task_type == 0:
-        service_time = np.random.randint(180, 300)
+        service_time = np.random.randint(200, 240)
     elif task_type == 1:
-        service_time = np.random.randint(60, 120)
+        service_time = np.random.randint(120, 150)
     elif task_type == 2:
-        service_time = np.random.randint(60, 120)
+        service_time = np.random.randint(120, 150)
     elif task_type == 3:
-        service_time = np.random.randint(60, 120)
+        service_time = np.random.randint(120, 150)
     elif task_type == 4:
-        service_time = np.random.randint(300, 600)
+        service_time = np.random.randint(300, 360)
     elif task_type == 5:
-        service_time = np.random.randint(300, 600)
+        service_time = np.random.randint(540, 600)
+    # service_time = 60
     task_info[4] = service_time
     return task_info
 
@@ -140,26 +142,30 @@ def generate_random_tasks(task_num=15):
     # 生成多个任务
     for site in range(len(LOCATIONS)):
         # 生成均匀分布或者正态分布的时间点
-        if np.random.uniform() < 0.5:
-            time_intervals[site] = generate_uniform_process(3000, task_num)  # 3600秒内生成10个任务请求
+        random_a,random_b = np.random.uniform(),np.random.uniform()
+        if random_a < 0.9:
+            time_intervals[site] = generate_uniform_process(3600, task_num)  # 3600秒内生成10个任务请求
         else:
-            time_intervals[site] = generate_normal_process(3000, task_num, 3000/2, 500+np.random.uniform()*1000)
+            time_intervals[site] = generate_normal_process(3600, task_num, 3600/2, 500+random_b*1000)
         for i in range(len(time_intervals[site])):
-            time = time_intervals[site][i]
-            task_item = generate_task(site, time)
-            tasks.append(task_item)
+            # if site == 16:
+            #     time = time_intervals[site][i]//2
+            # else:
+                time = time_intervals[site][i] #+ (17-site)*20
+                task_item = generate_task(site, time)
+                tasks.append(task_item)
 
     tasks = np.array(tasks, dtype=int)
     tasks = tasks[np.argsort(tasks[:, 0])]  # 按时间排序任务
     t_0 = tasks[0][0]
     for i in range(len(tasks)):
         tasks[i][0] -= t_0  # 使任务时间从0开始
-    return tasks
+    return tasks # 任务开始时间，起始位置，任务类型，目标位置，任务耗时
 
 
 
-def generate_tasks():
-    all_tasks = generate_random_tasks()
+def generate_tasks(task_num=5):
+    all_tasks = generate_random_tasks(task_num=task_num)
     all_tasks = np.column_stack((np.arange(0, len(all_tasks)), all_tasks))
     return all_tasks
 

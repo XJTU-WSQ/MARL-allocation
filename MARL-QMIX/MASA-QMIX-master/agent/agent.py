@@ -145,7 +145,7 @@ class Agents:
                                 agent_id = torch.argmax(q_values_clone[:, i]).cpu().item()
                                 if q_values_clone[:, i].cpu().max() == -float("inf"):
                                     agent_id = np.nan
-                            elif rand_choice < 0.5: # 25% 的概率选择更次优的结果
+                            elif rand_choice < 0.4: # 15% 的概率选择更次优的结果
                                 q_values_clone[:, i] = q_values_clone[:, i].cpu()
                                 q_values_clone[:, i][q_values_clone[:-1, i].argmax()] = -float("inf")  # 排除最优
                                 second_best = torch.argmax(q_values_clone[:-1, i]).cpu().item()
@@ -153,7 +153,7 @@ class Agents:
                                 agent_id = torch.argmax(q_values_clone[:, i]).cpu().item()
                                 if q_values_clone[:, i].cpu().max() == -float("inf"):
                                     agent_id = np.nan
-                            else: # 50% 的概率保留原有的规则进行随机选择
+                            else: # 60% 的概率保留原有的规则进行随机选择
                                 agent_id = random_choice_with_mask(avail_actions[:, i])
                                 q_values_clone[agent_id, :] = -float("inf")
                         else:

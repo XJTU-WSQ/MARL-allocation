@@ -1,5 +1,7 @@
 import copy
 import json
+import math
+import random
 import numpy as np
 from task import task_generator
 from loguru import logger
@@ -15,9 +17,11 @@ class RolloutWorker:
         self.obs_shape = args.obs_shape
         self.args = args
 
-        self.epsilon = args.epsilon
-        self.anneal_epsilon = args.anneal_epsilon
+        self.epsilon = args.max_epsilon
+        self.anneal_steps = args.anneal_steps
         self.min_epsilon = args.min_epsilon
+        self.max_epsilon = args.max_epsilon
+        self.current_step = 0
         print('Init RolloutWorker')
 
     def generate_episode(self, episode_num=None, evaluate=False, 
@@ -25,8 +29,10 @@ class RolloutWorker:
         # 如果提供了固定任务集，则使用，否则生成新任务
         if tasks is not None:
             self.env.tasks_array = tasks
+        elif evaluate:
+            self.env.tasks_array = task_generator.generate_tasks(task_num=5)
         else:
-            self.env.tasks_array = task_generator.generate_tasks()
+            self.env.tasks_array = task_generator.generate_tasks(task_num=random.randint(4, 6))
 
         episode_data = []
         if self.args.replay_dir != '' and evaluate and episode_num == 0:  # prepare for save replay of evaluation
@@ -45,6 +51,7 @@ class RolloutWorker:
             epsilon = epsilon - self.anneal_epsilon if epsilon > self.min_epsilon else epsilon
 
         # 初始化统计量
+        stats_dict = {}
         total_conflicts = 0
         total_wait_penalty = 0
         total_service_cost_penalty = 0
@@ -59,6 +66,13 @@ class RolloutWorker:
         max_random_time_wait = 0
         max_greedy_time_wait = 0
 
+        total_shift_time_on_road = 0
+        total_random_shift_time_on_road = 0
+        total_greedy_shift_time_on_road = 0
+        total_shift_service_time = 0
+        total_random_service_time = 0
+        total_greedy_service_time = 0
+
         max_shift_time_list = []
         max_random_time_list = []
         max_greedy_time_list = []       
@@ -70,7 +84,7 @@ class RolloutWorker:
         total_shift_completed_num = 0
         total_random_completed_num = 0
         total_greedy_completed_num = 0
-        tmp_num = 0
+
         while not terminated and step < self.episode_limit:
 
             self.env.update_task_window()
@@ -85,16 +99,15 @@ class RolloutWorker:
                 action_onehot = np.zeros(self.args.n_actions)
                 action_onehot[action] = 1
                 actions_onehot.append(action_onehot)
-            random_actions = self.env.assign_tasks_baseline(baseline_type='random')
-            greedy_actions = self.env.assign_tasks_baseline(baseline_type='greedy')
-            _, _, random_info = self.env.step(random_actions, freeze_env=True)
-            _, _, greedy_info = self.env.step(greedy_actions, freeze_env=True)
             if task_type == 'qmix':
                 reward, terminated, info = self.env.step(actions)
             elif task_type == 'random':
+                random_actions = self.env.assign_tasks_baseline(baseline_type='random')
                 reward, terminated, info = self.env.step(random_actions)
             elif task_type == 'greedy':
+                greedy_actions = self.env.assign_tasks_baseline(baseline_type='greedy')
                 reward, terminated, info = self.env.step(greedy_actions)
+            stats_dict[step] = info
             # 临时取消了局部奖励，后续待优化
             # reward1 = relative_reward(info,random_info,greedy_info,'concurrent_rewards', self.epsilon)
             # reward2 = relative_reward(info,random_info,greedy_info,'conflict_penalty', self.epsilon)
@@ -110,23 +123,19 @@ class RolloutWorker:
             total_wait_penalty += info["total_wait_penalty"]
 
             total_shift_time_wait += info["shift_time_wait"]
-            total_random_shift_time_wait += random_info["shift_time_wait"]
-            total_greedy_shift_time_wait += greedy_info["shift_time_wait"]
-
+            total_shift_time_on_road += info["shift_time_on_road"]
+            total_shift_service_time += info["shift_service_time"]
             max_shift_time_wait = max(max_shift_time_wait, info["max_time_wait"])
-            max_random_time_wait = max(max_random_time_wait, random_info["max_time_wait"])
-            max_greedy_time_wait = max(max_greedy_time_wait, greedy_info["max_time_wait"])
+
             max_shift_time_list.append(info["max_time_wait"])
-            max_random_time_list.append(random_info["max_time_wait"])
-            max_greedy_time_list.append(greedy_info["max_time_wait"])
+
 
             total_shift_allocated_num += info["shift_allocated_num"]
-            total_random_allocated_num += random_info["shift_allocated_num"]
-            total_greedy_allocated_num += greedy_info["shift_allocated_num"]
+
 
             total_shift_completed_num += info["shift_completed_num"]
-            total_random_completed_num += random_info["shift_completed_num"]
-            total_greedy_completed_num += greedy_info["shift_completed_num"]            
+   
+
             # 如果开启数据记录，将数据存入缓冲区
             if self.args.log_step_data:
                 episode_data.append({
@@ -137,6 +146,7 @@ class RolloutWorker:
                     "reward": convert_to_native(reward),
                     "avail_actions": convert_to_native(avail_actions),
                     "robots_state": convert_to_native(info["robots_state"]),
+                    "robots_work_times": convert_to_native(info["robots_work_times"]),
                     "task_window": convert_to_native(info["task_window"]),
                     "conflict_count": convert_to_native(info["conflict_count"]),
                     "total_wait_penalty": convert_to_native(info["total_wait_penalty"]),
@@ -155,19 +165,13 @@ class RolloutWorker:
             padded.append([0.])
             step += 1
 
-            if self.args.epsilon_anneal_scale == 'step' and evaluate!=True:
-                epsilon = epsilon - self.anneal_epsilon if epsilon > self.min_epsilon else epsilon
-                tmp_num += 1
-        avg_greedy_time_wait = total_greedy_shift_time_wait/total_greedy_allocated_num
-        avg_random_time_wait = total_random_shift_time_wait/total_random_allocated_num
-        avg_qmix_time_wait = total_shift_time_wait/total_shift_allocated_num
-        episode_reward = relative_reward(1/avg_qmix_time_wait, 1/avg_greedy_time_wait, 1/avg_random_time_wait, self.epsilon)
-        episode_reward2 = relative_reward(1/max_shift_time_wait, 1/max_greedy_time_wait, 1/max_random_time_wait, self.epsilon)
-        episode_reward3 = relative_reward(total_shift_allocated_num, total_random_allocated_num, total_greedy_allocated_num, self.epsilon)
-        episode_reward4 = relative_reward(total_shift_completed_num, total_random_completed_num, total_greedy_completed_num, self.epsilon)
-        episode_reward = episode_reward + episode_reward2
-        # 全局奖励：考虑平均等待时间，已分配任务数和已完成任务数
-        # last obs
+            if self.args.epsilon_anneal_scale == 'step' and evaluate!=True and task_type == 'qmix':
+                # anneal_epsilon = (self.epsilon - self.min_epsilon) / self.anneal_steps
+                # epsilon = epsilon - anneal_epsilon if epsilon > self.min_epsilon else epsilon
+                self.current_step +=1
+                # 改为平方衰减探索率
+                progress = min(1.0, self.current_step / self.anneal_steps)
+                epsilon = self.min_epsilon + (self.max_epsilon - self.min_epsilon) * ((1 - progress)**2)
         obs = self.env.get_obs()
         state = self.env.get_state()
         o.append(obs)
@@ -199,6 +203,41 @@ class RolloutWorker:
             padded.append([1.])
             terminate.append([1.])  # 如果没有padding的情况下是没有terminal的
 
+        if task_type == 'qmix':
+            _, _, _, random_stats =  self.generate_episode(episode_num=episode_num, evaluate=evaluate, 
+                            tasks=tasks, task_type = 'random', evalue_epsilon=evalue_epsilon)
+            _, _, _, greedy_stats =  self.generate_episode(episode_num=episode_num, evaluate=evaluate, 
+                            tasks=tasks, task_type = 'greedy', evalue_epsilon=evalue_epsilon)
+            total_random_shift_time_wait = random_stats['shift_time_wait']
+            total_greedy_shift_time_wait = greedy_stats['shift_time_wait']
+            # total_random_shift_time_on_road = random_stats['shift_time_on_road']
+            # total_greedy_shift_time_on_road = greedy_stats['shift_time_on_road']
+            # total_random_service_time = random_stats['shift_service_time']
+            # total_greedy_service_time = greedy_stats['shift_service_time']
+            # max_random_time_wait = random_stats['max_shift_time_wait']
+            # max_greedy_time_wait = greedy_stats['max_shift_time_wait']
+            # total_random_allocated_num = random_stats['total_allocated_num']
+            # total_greedy_allocated_num = greedy_stats['total_allocated_num']
+            total_random_completed_num = random_stats['completed_tasks']
+            total_greedy_completed_num = greedy_stats["completed_tasks"]
+
+
+            # avg_greedy_time_wait = total_greedy_shift_time_wait/total_greedy_allocated_num
+            # avg_random_time_wait = total_random_shift_time_wait/total_random_allocated_num
+            # avg_qmix_time_wait = total_shift_time_wait/total_shift_allocated_num
+            # avg_greedy_time_on_road = total_greedy_shift_time_on_road/total_greedy_allocated_num
+            # avg_random_time_on_road = total_random_shift_time_on_road/total_random_allocated_num
+            # avg_qmix_time_on_road = total_shift_time_on_road/total_shift_allocated_num
+            # avg_greedy_service_time = total_greedy_service_time/total_greedy_allocated_num
+            # avg_random_service_time = total_random_service_time/total_random_allocated_num
+            # avg_qmix_service_time = total_shift_service_time/total_shift_allocated_num
+
+
+            episode_reward = relative_reward(total_shift_completed_num, total_greedy_completed_num, total_random_completed_num, epsilon)
+            r = [[(r[i][0]-0.5)*abs(episode_reward)+episode_reward] for i in range(len(r))]
+            # 全局奖励：考虑平均等待时间，已分配任务数和已完成任务数
+        # last obs
+
         episode = dict(o=o.copy(),
                        s=s.copy(),
                        u=u.copy(),
@@ -223,31 +262,30 @@ class RolloutWorker:
                 with open(f"./episode_logs/episode_{episode_num}.json", "w", encoding="utf-8") as f:
                     json.dump(episode_data, f, indent=4)
                 print(f"Episode {episode_num} data saved to episode_{episode_num}.json")
-        total_wait_time = self.env.total_time_wait  # 累计等待时间
-        total_completed_tasks = sum(self.env.tasks_completed)
-        total_allocated_tasks = sum(self.env.tasks_allocated)
         total_tasks = len(self.env.tasks_array)
-        completion_rate = total_completed_tasks / total_tasks
-        allocated_rate = total_allocated_tasks / total_tasks
+        completion_rate = total_shift_completed_num / total_tasks
+        allocated_rate = total_shift_allocated_num / total_tasks
         # 构建统计量
         stats = {
             "concurrent_rewards": total_concurrent_rewards,
             "conflicts": total_conflicts,
             "conflict_penalty": total_conflict_penalty,
-            "wait_time": total_wait_time,
             "wait_penalty": total_wait_penalty,
             "service_cost_penalty": total_service_cost_penalty,
-            "completed_tasks": total_completed_tasks,
             "completion_rate": completion_rate,
             "allocated_rate": allocated_rate,
             "episode_reward": episode_reward,
             "epsilon_value":epsilon,
             "shift_time_wait":total_shift_time_wait,
+            "shift_time_on_road":total_shift_time_on_road,
+            "shift_service_time":total_shift_service_time,
+            "total_completed_time":total_shift_time_wait+total_shift_service_time,
             "max_shift_time_wait":max_shift_time_wait,
             "total_allocated_num":total_shift_allocated_num,
-            "total_completed_num":total_shift_completed_num,
+            "completed_tasks":total_shift_completed_num, # completed_tasks
             "random_shift_time_wait":total_random_shift_time_wait,
-            "greedy_shift_time_wait":total_greedy_shift_time_wait
+            "greedy_shift_time_wait":total_greedy_shift_time_wait,
+            "stats_dict":stats_dict
         }
 
         return episode, episode_reward, terminated, stats
@@ -273,13 +311,7 @@ def convert_to_native(obj):
         return obj  # 返回
 
 def relative_reward(a, b, c, epsilon):
-    # 根据 b 和 c 构建基线，评估 a 所处位置并用于奖励的计算
-    baseline_lower = min(b, c)+(0.9-epsilon)*abs(b-c)
-    baseline_upper = max(b, c)+(0.9-epsilon)*abs(b-c)
-    one_level_range = max(a,b)
-    if a < baseline_lower:
-        return -2*(baseline_lower - a)/(one_level_range)
-    elif a > baseline_upper:
-        return 2*(a - baseline_upper)/(one_level_range)
-    else:
-        return (a - baseline_lower)/one_level_range
+    # 根据 b 评估 a 的相对奖励
+    return np.e**((a-b)/b)-1
+
+
