@@ -123,8 +123,7 @@ class Robots:
         count = buffer_info['count']
         mean = buffer_info['mean']
         M2 = buffer_info['M2']
-        
-        
+
         count += 1 # 更新计数
         delta = task_times/30 - mean # 计算增量
         mean += delta / count # 更新均值

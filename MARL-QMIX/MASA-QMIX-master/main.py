@@ -34,8 +34,8 @@ def marl_agent_wrapper():
     if args.learn:
         runner.run()
     else:
-        _, reward = runner.evaluate()
-        print('The ave_reward of {} is  {}'.format(args.alg, reward))
+        epoch_rewards, _ = runner.evaluate()
+        print('The ave_reward of {} is  {}'.format(args.alg, epoch_rewards))
 
 
 if __name__ == "__main__":

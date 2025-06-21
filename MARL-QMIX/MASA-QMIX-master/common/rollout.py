@@ -50,7 +50,6 @@ class RolloutWorker:
         # 对于其他算法，且任务集相同（tasks不为None），使用保存的位置
         if task_type != 'qmix' and tasks is not None and hasattr(self, 'fixed_initial_pos'):
             self.env.robots.robot_pos = copy.deepcopy(fixed_initial_pos)
-        
         terminated = False
         step = 0
         episode_reward = 0
@@ -132,7 +131,6 @@ class RolloutWorker:
                 # 改为平方衰减探索率
                 progress = min(1.0, self.current_step / self.anneal_steps)
                 epsilon = self.min_epsilon + (self.max_epsilon - self.min_epsilon) * ((1 - progress)**2)
-        
         # === 在循环结束后添加统计量计算 ===
         total_allocated_num = sum(self.env.tasks_allocated)
         total_completed_num = sum(self.env.tasks_completed)
@@ -146,8 +144,8 @@ class RolloutWorker:
 
         # 计算总体完成时间
         if total_completed_num > 0:
-            total_completion_time = sum(self.env.completed_tasks_time)        
-        
+            total_completion_time = sum(self.env.completed_tasks_time)
+
         obs = self.env.get_obs()
         state = self.env.get_state()
         o.append(obs)
@@ -183,7 +181,7 @@ class RolloutWorker:
             _, _, _, random_stats =  self.generate_episode(episode_num=episode_num, evaluate=evaluate, 
                             tasks=tasks, task_type='random', evalue_epsilon=evalue_epsilon)
             _, _, _, greedy_stats =  self.generate_episode(episode_num=episode_num, evaluate=evaluate, 
-                            tasks=tasks, task_type = 'greedy', evalue_epsilon=evalue_epsilon)
+                            tasks=tasks, task_type='greedy', evalue_epsilon=evalue_epsilon)
             total_random_completion_time = random_stats['total_completion_time']
             total_greedy_completion_time = greedy_stats['total_completion_time']
 
@@ -218,7 +216,6 @@ class RolloutWorker:
                 with open(f"./episode_logs/episode_{episode_num}.json", "w", encoding="utf-8") as f:
                     json.dump(episode_data, f, indent=4)
                 print(f"Episode {episode_num} data saved to episode_{episode_num}.json")
-        
         total_tasks = len(self.env.tasks_array)
         completion_rate = total_completed_num / total_tasks
         allocated_rate = total_allocated_num / total_tasks
@@ -242,7 +239,7 @@ class RolloutWorker:
             "total_greedy_completion_time": total_greedy_completion_time,
             "total_random_completed_num": total_random_completed_num,
             "total_greedy_completed_num": total_greedy_completed_num,
-            "stats_dict":stats_dict
+            "stats_dict": stats_dict
         }
 
         return episode, episode_reward, terminated, stats

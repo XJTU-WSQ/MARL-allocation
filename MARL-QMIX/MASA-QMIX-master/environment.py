@@ -194,7 +194,7 @@ class ScheduleEnv(gym.Env, ABC):
                 task_y = destination_pos[1] / max_pos_value
                 # 归一化距离和等待时间
                 dis = (abs(robot_pos[0] - destination_pos[0]) + abs(robot_pos[1] - destination_pos[1])) / max_distance
-                wait_time = self.time_wait[task_index] / 30 # max_wait_time
+                wait_time = self.time_wait[task_index] / 30
                 task_tyep_features = [0 for i in range(len(self.tasks.task_info))]
                 task_tyep_features[task_type] = 1
                 buff_skills_coff_mean = self.robots.get_buff_skills_coff_mean(robot_id, task_type)
@@ -269,7 +269,6 @@ class ScheduleEnv(gym.Env, ABC):
             else:
                 avail_actions[j] = 0  # 机器人技能不匹配，任务不可选
         return avail_actions
-    
     def assign_tasks_baseline(self, baseline_type='random'):
         self.update_task_window()
         self.renew_wait_time()
@@ -323,7 +322,7 @@ class ScheduleEnv(gym.Env, ABC):
         total_service_cost_penalty = 0
         service_coff_list = []
         freeze_dict = {
-            'robots_state':self.robots_state.copy(),
+            'robots_state': self.robots_state.copy(),
             'robots_work_times': self.robots_work_times,
             'tasks_completed': self.tasks_completed.copy(),
             'tasks_allocated': self.tasks_allocated.copy(),
@@ -432,8 +431,8 @@ class ScheduleEnv(gym.Env, ABC):
         total_reward = np.mean(service_coff_list) if len(service_coff_list)>0 else 0.5 # concurrent_rewards + conflict_penalty + total_service_cost_penalty + total_wait_penalty
         shift_allocated_num = sum(self.tasks_allocated)-sum(freeze_dict['tasks_allocated'])
         shift_completed_num = sum(self.tasks_completed)-sum(freeze_dict['tasks_completed'])
-        
-        time_wait_list = [i[0]+i[1] for i in zip(self.time_wait,self.time_on_road)]
+
+        time_wait_list = [i[0]+i[1] for i in zip(self.time_wait, self.time_on_road)]
         info = {
             "done": done,
             "robots_state": self.robots_state,
