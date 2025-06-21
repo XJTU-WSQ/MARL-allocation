@@ -122,14 +122,13 @@ class Robots:
         count = buffer_info['count']
         mean = buffer_info['mean']
         M2 = buffer_info['M2']
-        
-        
+
         count += 1 # 更新计数
-        delta = task_times - mean # 计算增量
+        delta = task_times/30 - mean # 计算增量
         mean += delta / count # 更新均值
         
         # 更新二阶矩 (用于计算方差和标准差)
-        delta2 = task_times - mean
+        delta2 = task_times/30 - mean
         M2 += delta * delta2
         
         # 保存更新后的统计量

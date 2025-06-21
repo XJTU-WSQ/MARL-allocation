@@ -114,7 +114,6 @@ class ScheduleEnv(gym.Env, ABC):
         """
         state = []
         max_pos_value = 60.0  # 坐标范围为 [0, 60]
-        max_wait_time = max(self.time_wait) if max(self.time_wait) > 0 else 1e-5
 
         # 添加机器人状态信息（机器人归一化位置信息，以及机器人状态信息）
         for robot_id in range(self.robots.num_robots):
@@ -138,7 +137,7 @@ class ScheduleEnv(gym.Env, ABC):
                 destination_pos = self.sites.sites_pos[site_id]
             state.append(destination_pos[0] / max_pos_value)  # x 坐标归一化
             state.append(destination_pos[1] / max_pos_value)  # y 坐标归一化
-            state.append(self.time_wait[task_index] / max_wait_time)  # 动态归一化等待时间
+            state.append(self.time_wait[task_index] / 30)  # 动态归一化等待时间
 
         # 填充空位
         for _ in range(self.task_window_size - len(waiting_tasks)):
@@ -165,7 +164,6 @@ class ScheduleEnv(gym.Env, ABC):
         robot_type_id = self.robots.robots_type_id[robot_id]
         max_pos_value = 60.0  # 坐标最大值
         max_distance = 100.0  # 环境中最大曼哈顿距离
-        max_wait_time = max(self.time_wait) if max(self.time_wait) > 0 else 1e-5  # 避免除以零
         max_task_window_size = self.task_window_size  # 假设任务窗口大小固定
 
         # 1. 添加机器人自身信息(状态信息和归一化位置信息)
@@ -195,9 +193,9 @@ class ScheduleEnv(gym.Env, ABC):
                 task_y = destination_pos[1] / max_pos_value
                 # 归一化距离和等待时间
                 dis = (abs(robot_pos[0] - destination_pos[0]) + abs(robot_pos[1] - destination_pos[1])) / max_distance
-                wait_time = self.time_wait[task_index] / max_wait_time
+                wait_time = self.time_wait[task_index] / 30
                 task_tyep_features = [0 for i in range(len(self.tasks.task_info))]
-                task_tyep_features[task_type] =1
+                task_tyep_features[task_type] = 1
                 buff_skills_coff_mean = self.robots.get_buff_skills_coff_mean(robot_id, task_type)
                 buff_skills_coff_std = self.robots.get_buff_skills_coff_std(robot_id, task_type)
                 task_features.append([task_x, task_y, dis, wait_time, buff_skills_coff_mean, buff_skills_coff_std]+task_tyep_features)
@@ -462,7 +460,7 @@ class ScheduleEnv(gym.Env, ABC):
         total_wait_penalty = self.calc_total_wait_penalty()
         # 综合奖励（90 -35/1.5 -120/2 -30）
         # 完成分配的任务比例(旧) + 机器人冲突惩罚 + 服务距离惩罚 + 等待任务量惩罚
-        total_reward = np.mean(service_coff_list) if len(service_coff_list)>0 else 0.5# concurrent_rewards + conflict_penalty + total_service_cost_penalty + total_wait_penalty
+        total_reward = np.mean(service_coff_list) if len(service_coff_list)>0 else 0.5 # concurrent_rewards + conflict_penalty + total_service_cost_penalty + total_wait_penalty
         shift_time_wait = self.total_time_wait - freeze_dict['total_time_wait']
         shift_time_on_road = self.total_time_on_road - freeze_dict['total_time_on_road']
         shift_service_time = self.total_service_time - freeze_dict['total_service_time']
