@@ -40,50 +40,56 @@ class Runner:
         for epoch in range(self.args.n_epoch):
             # 显示输出
             if epoch > 100 and epoch % self.args.evaluate_cycle == 1:  # 确保测试在模型文件更新之后
-                episode_reward, wait_time = self.evaluate()
-                logger.info(f'Test evaluate_average_reward:{episode_reward:.2f}, evaluate_average_wait_time:{wait_time:.2f} epoch:{epoch:.2f}')
+                episode_reward, avg_completion_time, avg_completion_rate = self.evaluate()
+                logger.info(f'Test evaluate_average_reward:{episode_reward:.2f}, evaluate_average_completion_time:{avg_completion_time:.2f},'
+                            f' evaluate_average_completion_rate: {np.mean(completion_rate) * 100:.2f}% epoch:{epoch:.2f}')
             epoch_info_dict = defaultdict(list)
-            epoch_stats_type = ['concurrent_rewards','conflict_penalty','wait_penalty','service_cost_penalty',
-                                'conflicts','shift_time_wait','random_shift_time_wait','greedy_shift_time_wait',
-                                'completed_tasks','completion_rate','allocated_rate','epsilon_value','max_shift_time_wait',
-                                'shift_time_on_road','shift_service_time','total_completed_time']
+            epoch_stats_type = ['total_completion_time', 'total_random_completion_time', 'total_greedy_completion_time', 'total_random_completed_num',
+                                'total_greedy_completed_num', 'total_completed_num', 'completion_rate', 'total_allocated_num', 'allocated_rate',
+                                'epsilon_value', 'total_time_wait', 'total_time_on_road', 'total_service_time']
             # 每个 epoch 收集多个 episode 的各类统计信息
             episodes = []
+            completion_rate = []
+            random_completion_rate = []
+            greedy_completion_rate = []
             with timer(f'generate_episode with n_episodes={self.args.n_episodes}'):
                 for _ in range(self.args.n_episodes):
                     episode, episode_reward, terminated, episode_stats = self.rolloutWorker.generate_episode(epoch)
                     # 累加统计量
                     episodes.append(episode)
                     epoch_info_dict['epoch_rewards'].append(episode_reward)
-                    epoch_info_dict['wait_times_random'].append(episode_stats["random_shift_time_wait"])
-                    epoch_info_dict['wait_times_greedy'].append(episode_stats["greedy_shift_time_wait"])
                     for stat_type in epoch_stats_type:
                         epoch_info_dict[stat_type].append(episode_stats[stat_type])
-                    epoch_info_dict['total_avg_time_wait'].append(episode_stats["shift_time_wait"]/episode_stats["total_allocated_num"])
+                    epoch_info_dict['avg_completion_time'].append(episode_stats["total_completion_time"]/episode_stats["total_completed_num"])
+                    completion_rate.append(episode_stats['completion_rate'])
+                    epoch_info_dict['avg_random_completion_time'].append(episode_stats["total_random_completion_time"] / episode_stats["total_random_completed_num"])
+                    random_completion_rate.append(episode_stats['total_random_completed_num'] / episode_stats['total_tasks_num'])  # 假设tasks_array可用
+                    epoch_info_dict['avg_greedy_completion_time'].append(episode_stats["total_greedy_completion_time"] / episode_stats["total_greedy_completed_num"])
+                    greedy_completion_rate.append(episode_stats['total_greedy_completed_num'] / episode_stats['total_tasks_num'])
 
             epoch_avg_dict = defaultdict(int)
-            avg_stats_type = ['conflicts','shift_time_wait','max_shift_time_wait','completed_tasks','completion_rate','epsilon_value',
-                              'epoch_rewards','concurrent_rewards','conflict_penalty','wait_penalty','service_cost_penalty',
-                              'total_avg_time_wait','wait_times_random','wait_times_greedy','shift_time_on_road','shift_service_time','total_completed_time']
+            avg_stats_type = ['total_completed_num', 'completion_rate', 'total_allocated_num', 'allocated_rate',
+                              'epsilon_value', 'epoch_rewards',  'total_time_wait', 'total_time_on_road', 'total_service_time',
+                              'total_completion_time', 'avg_completion_time', 'avg_random_completion_time', 'avg_greedy_completion_time']
             for avg_stat in avg_stats_type:
                 epoch_avg_dict[avg_stat] = np.mean(epoch_info_dict[avg_stat])
                 self.writer.add_scalar(f"Train/AVG {avg_stat}", epoch_avg_dict[avg_stat], epoch)
             
             epoch_max_dict = defaultdict(int)
             epoch_min_dict = defaultdict(int)
-            maxmin_stats_type = ['epoch_rewards','concurrent_rewards','conflict_penalty','wait_penalty','service_cost_penalty','total_avg_time_wait']
+            maxmin_stats_type = ['epoch_rewards', 'avg_completion_time']
             for maxmin_stat in maxmin_stats_type:
                 epoch_max_dict[maxmin_stat] = np.max(epoch_info_dict[maxmin_stat])
                 epoch_min_dict[maxmin_stat] = np.min(epoch_info_dict[maxmin_stat])
                 self.writer.add_scalar(f"Train/MAX {maxmin_stat}", epoch_max_dict[maxmin_stat], epoch)
                 self.writer.add_scalar(f"Train/MIN {maxmin_stat}", epoch_min_dict[maxmin_stat], epoch)
 
-            qmix_avg_time = epoch_avg_dict['shift_time_wait']
-            random_avg_time = epoch_avg_dict['wait_times_random']
-            greedy_avg_time = epoch_avg_dict['wait_times_greedy']
-            logger.info(f'Compare shift_time_wait: QMIX={qmix_avg_time:.2f} random={random_avg_time:.2f} greedy={greedy_avg_time:.2f}')
-            # 写入 TensorBoard
-            
+            avg_completion_time = epoch_avg_dict['avg_completion_time']
+            avg_random_completion_time = epoch_avg_dict['avg_random_completion_time']
+            avg_greedy_completion_time = epoch_avg_dict['avg_greedy_completion_time']
+            logger.info(f'Compare average_completion_time: QMIX={avg_completion_time:.2f} random={avg_random_completion_time:.2f} greedy={avg_greedy_completion_time:.2f}')
+            logger.info(
+                f'Compare completion_rate: QMIX={np.mean(completion_rate) * 100:.2f}% random={np.mean(random_completion_rate) * 100:.2f}% greedy={np.mean(greedy_completion_rate) * 100:.2f}%')
             episode_batch = episodes[0]
             episodes.pop(0)
             for episode in episodes:
@@ -94,8 +100,7 @@ class Runner:
             self.buffer.store_episode(episode_batch)
             
             epoch_avg_rewards = epoch_avg_dict['epoch_rewards']
-            avg_qmix_max_time = epoch_avg_dict['max_shift_time_wait']
-            logger.info(f"Epoch {epoch}: AVG Reward={epoch_avg_rewards:.2f}, AVG Wait_time={qmix_avg_time:.2f}, MAX Wait_time={avg_qmix_max_time:.2f}")
+            logger.info(f"Epoch {epoch}: AVG Reward={epoch_avg_rewards:.2f}, AVG Total_completion_time={avg_completion_time:.2f}, AVG completion_rate={np.mean(completion_rate) * 100:.2f}%")
             # 执行训练步骤(buffer 小于200 没必要训练)
             if self.buffer.current_size > 200:
                 for train_step in range(self.args.train_steps):
@@ -112,34 +117,40 @@ class Runner:
         测试阶段：记录测试的指标
         """
         epoch_info_dict = defaultdict(list)
-        epoch_stats_type = ['concurrent_rewards','conflict_penalty','shift_time_on_road','shift_service_time','total_completed_time',#'wait_penalty','service_cost_penalty',
-                            'conflicts','shift_time_wait','random_shift_time_wait','greedy_shift_time_wait',
-                            'completed_tasks','completion_rate','allocated_rate','epsilon_value','max_shift_time_wait']
+        epoch_stats_type = ['total_completion_time', 'total_random_completion_time', 'total_greedy_completion_time', 'total_random_completed_num',
+                            'total_greedy_completed_num', 'total_completed_num', 'completion_rate', 'total_allocated_num', 'allocated_rate',
+                            'epsilon_value', 'total_time_wait', 'total_time_on_road', 'total_service_time']
         # 每个 epoch 收集多个 episode 的各类统计信息
+        completion_rate = []
+        random_completion_rate = []
+        greedy_completion_rate = []
+
         with timer(f'generate_episode with n_episodes={self.args.n_episodes}'):
             for _ in range(self.args.evaluate_epoch):
                 _, episode_reward, _, episode_stats = self.rolloutWorker.generate_episode(evaluate=True)
 
                 # 累加统计量
                 epoch_info_dict['epoch_rewards'].append(episode_reward)
-                epoch_info_dict['wait_times_random'].append(episode_stats["random_shift_time_wait"])
-                epoch_info_dict['wait_times_greedy'].append(episode_stats["greedy_shift_time_wait"])
                 for stat_type in epoch_stats_type:
                     epoch_info_dict[stat_type].append(episode_stats[stat_type])
-                epoch_info_dict['total_avg_time_wait'].append(episode_stats["shift_time_wait"]/episode_stats["total_allocated_num"])
+                epoch_info_dict['avg_completion_time'].append(episode_stats["total_completion_time"]/episode_stats["total_completed_num"])
+                completion_rate.append(episode_stats['completion_rate'])
+                epoch_info_dict['avg_random_completion_time'].append(episode_stats["total_random_completion_time"] / episode_stats["total_random_completed_num"])
+                random_completion_rate.append(episode_stats['total_random_completed_num'] / episode_stats['total_tasks_num'])
+                epoch_info_dict['avg_greedy_completion_time'].append(episode_stats["total_greedy_completion_time"] / episode_stats["total_greedy_completed_num"])
+                greedy_completion_rate.append(episode_stats['total_greedy_completed_num'] / episode_stats['total_tasks_num'])
 
         epoch_avg_dict = defaultdict(int)
-        avg_stats_type = ['conflicts','shift_time_wait','max_shift_time_wait','completed_tasks','completion_rate','epsilon_value',
-                            'epoch_rewards','concurrent_rewards','conflict_penalty','shift_time_on_road','shift_service_time','total_completed_time',#'wait_penalty','service_cost_penalty',
-                            'total_avg_time_wait','wait_times_random','wait_times_greedy','total_allocated_num']
+        avg_stats_type = ['total_completed_num', 'completion_rate', 'total_allocated_num', 'allocated_rate',
+                          'epsilon_value', 'epoch_rewards', 'total_time_wait', 'total_time_on_road', 'total_service_time',
+                          'total_completion_time', 'avg_completion_time', 'avg_random_completion_time', 'avg_greedy_completion_time']
         for avg_stat in avg_stats_type:
             epoch_avg_dict[avg_stat] = np.mean(epoch_info_dict[avg_stat])
             self.writer.add_scalar(f"Test/AVG {avg_stat}", epoch_avg_dict[avg_stat], self.test_episode_count)
         
         epoch_max_dict = defaultdict(int)
         epoch_min_dict = defaultdict(int)
-        maxmin_stats_type = ['epoch_rewards','concurrent_rewards','conflict_penalty',#'wait_penalty','service_cost_penalty',
-                             'total_avg_time_wait']
+        maxmin_stats_type = ['epoch_rewards', 'avg_completion_time']
         for maxmin_stat in maxmin_stats_type:
             epoch_max_dict[maxmin_stat] = np.max(epoch_info_dict[maxmin_stat])
             epoch_min_dict[maxmin_stat] = np.min(epoch_info_dict[maxmin_stat])
@@ -147,7 +158,7 @@ class Runner:
             self.writer.add_scalar(f"Test/MIN {maxmin_stat}", epoch_min_dict[maxmin_stat], self.test_episode_count)
 
         self.test_episode_count += 1
-        return epoch_avg_dict['epoch_rewards'], epoch_avg_dict['shift_time_wait']
+        return epoch_avg_dict['epoch_rewards'], epoch_avg_dict['avg_completion_time'], epoch_avg_dict['completion_rate']
 
 
 

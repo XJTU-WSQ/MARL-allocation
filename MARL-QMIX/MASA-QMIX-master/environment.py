@@ -40,6 +40,7 @@ class ScheduleEnv(gym.Env, ABC):
         self.time_on_road = [0 for _ in range(len(self.tasks_array))]
         self.service_time = [0 for _ in range(len(self.tasks_array))]
         self.service_coff = [0 for _ in range(len(self.tasks_array))]
+        self.completed_tasks_time = []
         self.total_time_wait = 0
         self.total_time_on_road = 0
         self.total_time_on_road2 = 0
@@ -269,39 +270,6 @@ class ScheduleEnv(gym.Env, ABC):
                 avail_actions[j] = 0  # 机器人技能不匹配，任务不可选
         return avail_actions
 
-    def calc_concurrent_rewards(self, task_allocation):
-        """
-        修正并发奖励计算逻辑：机器人不可重复分配。
-        """
-        available_robots = set(
-            robot_id for robot_id in range(self.robots.num_robots)
-            if self.robots_state[robot_id] == 0
-        )
-        max_possible_assignments = 0
-
-        for task in self.task_window:
-            if all(x == 0 for x in task):  # 跳过无效任务
-                continue
-
-            required_skills = self.tasks.required_skills[task[3]]
-            for robot_id in available_robots:
-                robot_skills = self.robots.get_skills(robot_id)
-                if all(rs >= ts for rs, ts in zip(robot_skills, required_skills)):
-                    max_possible_assignments += 1
-                    available_robots.remove(robot_id)  # 分配后移除
-                    break  # 一个任务只需要一个机器人
-
-        actual_assignments = len(task_allocation)
-        concurrent_ratio = actual_assignments / max_possible_assignments if max_possible_assignments > 0 else 0
-        concurrent_rewards = self.concurrent_reward_weight * concurrent_ratio * actual_assignments
-        return concurrent_rewards
-
-    def calc_total_wait_penalty(self):
-        # 累计等待惩罚
-        step_wait_num = sum(1 for task in self.tasks_array if self.tasks_allocated[task[0]] == 0 and task[1] <= self.time)
-        total_wait_penalty = self.wait_penalty_weight * step_wait_num
-        return total_wait_penalty
-    
     def assign_tasks_baseline(self, baseline_type='random'):
         self.update_task_window()
         self.renew_wait_time()
@@ -353,25 +321,23 @@ class ScheduleEnv(gym.Env, ABC):
         time_step = 30  # 每个 step 的时间间隔(额外冗余 30*120=3600s， 120对应episode_limit)
         conflict_penalty = 0
         total_service_cost_penalty = 0
-        total_wait_penalty = 0
         service_coff_list = []
         freeze_dict = {
-            'robots_state':self.robots_state,
+            'robots_state': self.robots_state.copy(),
             'robots_work_times': self.robots_work_times,
-            'tasks_completed':self.tasks_completed.copy(),
-            'tasks_allocated':self.tasks_allocated.copy(),
-            'time':self.time,
-            'time_wait':self.time_wait.copy(),
-            'total_time_wait':self.total_time_wait,
-            'total_time_on_road':self.total_time_on_road,
-            'total_service_time':self.total_service_time,
-            'time_on_road': self.time_on_road,
-            'service_time': self.service_time,
-            'service_coff': self.service_coff,
-            'robots':deepcopy(self.robots),
+            'tasks_completed': self.tasks_completed.copy(),
+            'tasks_allocated': self.tasks_allocated.copy(),
+            'time': self.time,
+            'time_wait': self.time_wait.copy(),
+            'total_time_wait': self.total_time_wait,
+            'total_time_on_road': self.total_time_on_road,
+            'total_service_time': self.total_service_time,
+            'time_on_road': self.time_on_road.copy(),
+            'service_time': self.service_time.copy(),
+            'service_coff': self.service_coff.copy(),
+            'robots': deepcopy(self.robots),
         }   
-    
-        
+
         conflict_count = 0  # 记录冲突数量
         # 用于记录任务分配情况，检测冲突
         task_allocation = {}
@@ -395,6 +361,12 @@ class ScheduleEnv(gym.Env, ABC):
                     self.robots_state[robot_id] = 0
                     self.robots_work_times[robot_id] = 0
                     self.tasks_completed[task_info[0]] = 1  # 标记任务完成
+                    task_index = task_info[0]
+                    # 计算任务完成时间 = 等待时间 + 在途时间 + 服务时间
+                    completion_time = (self.time_wait[task_index] +
+                                       self.time_on_road[task_index] +
+                                       self.service_time[task_index])
+                    self.completed_tasks_time.append(completion_time)
 
         # 遍历所有机器人动作，分配任务并记录任务分配
         for robot_id, action in enumerate(actions):
@@ -439,7 +411,7 @@ class ScheduleEnv(gym.Env, ABC):
             else:  # 没有冲突
                 agent_id = agents[0]
                 task = self.task_window[task_index]
-                time_on_road, service_time, time_on_road2,service_coff = self.robots.execute_task(agent_id, task)
+                time_on_road, service_time, time_on_road2, service_coff = self.robots.execute_task(agent_id, task)
                 self.robots_state[agent_id] = 1
                 self.tasks_allocated[task[0]] = 1
                 self.time_on_road[task[0]] = time_on_road
@@ -450,48 +422,33 @@ class ScheduleEnv(gym.Env, ABC):
             self.total_time_on_road += time_on_road
             self.total_time_on_road2 += time_on_road2
             self.total_service_time += service_time
+
         # 更新时间步
         self.time += time_step
         self.total_time_wait = sum(self.time_wait) + self.total_time_on_road  # 累计等待时间
-        self.total_time_service = sum(self.time_wait) + self.total_time_on_road + self.total_time_on_road2 + self.total_service_time # 服务完成时间
         done = self.time > self.tasks_array[-1][1] and sum(self.tasks_completed) == len(self.tasks_array)
-        
-        concurrent_rewards = self.calc_concurrent_rewards(task_allocation)
-        total_wait_penalty = self.calc_total_wait_penalty()
-        # 综合奖励（90 -35/1.5 -120/2 -30）
+
         # 完成分配的任务比例(旧) + 机器人冲突惩罚 + 服务距离惩罚 + 等待任务量惩罚
         total_reward = np.mean(service_coff_list) if len(service_coff_list)>0 else 0.5 # concurrent_rewards + conflict_penalty + total_service_cost_penalty + total_wait_penalty
-        shift_time_wait = self.total_time_wait - freeze_dict['total_time_wait']
-        shift_time_on_road = self.total_time_on_road - freeze_dict['total_time_on_road']
-        shift_service_time = self.total_service_time - freeze_dict['total_service_time']
         shift_allocated_num = sum(self.tasks_allocated)-sum(freeze_dict['tasks_allocated'])
         shift_completed_num = sum(self.tasks_completed)-sum(freeze_dict['tasks_completed'])
-        # logger.info(f'shift_time_wait:{shift_time_wait} shift_allocated_num:{shift_allocated_num} shift_completed_num:{shift_completed_num} ')
-        # logger.info(f'shift_time_wait:{shift_time_wait} sum_allocated_num:{sum(self.tasks_allocated)} sum_completed_num:{sum(self.tasks_completed)} ')
-        time_wait_list = [i[0]+i[1] for i in zip(self.time_wait,self.time_on_road)]
-        curr_time_wait_list = [time_wait_list[i] for i in range(len(time_wait_list)) if freeze_dict['tasks_allocated'][i]==0 and self.tasks_allocated[i]==1]
+
+        time_wait_list = [i[0]+i[1] for i in zip(self.time_wait, self.time_on_road)]
         info = {
+            "done": done,
             "robots_state": self.robots_state,
             "robots_work_times": self.robots_work_times,
             "task_window": self.task_window,
             "tasks_completed": self.tasks_completed,
             "tasks_allocated": self.tasks_allocated,
-            "time_on_road": self.time_on_road,
             "time_wait": self.time_wait,
+            "time_on_road": self.time_on_road,
             "service_time": self.service_time,
-            "service_coff":self.service_coff,
-            "concurrent_rewards": concurrent_rewards,
-            "conflict_count": conflict_count,
-            "conflict_penalty": conflict_penalty,
-            "total_service_cost_penalty": total_service_cost_penalty,
-            "total_wait_penalty": total_wait_penalty,
-            "done": done,
-            'shift_time_wait': shift_time_wait,
-            'max_time_wait': np.max(curr_time_wait_list) if len(curr_time_wait_list)>0 else 0,
-            'shift_allocated_num':shift_allocated_num,
-            'shift_completed_num':shift_completed_num,
-            'shift_time_on_road':shift_time_on_road,
-            'shift_service_time':shift_service_time,
+            'completed_tasks_time': self.completed_tasks_time.copy(),
+            "service_coff": self.service_coff,
+            'shift_allocated_num': shift_allocated_num,
+            'shift_completed_num': shift_completed_num,
+            'num_completed_tasks': len(self.completed_tasks_time)
         }
         return total_reward, done, info
 
