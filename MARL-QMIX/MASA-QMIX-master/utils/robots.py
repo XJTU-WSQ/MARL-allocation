@@ -117,6 +117,7 @@ class Robots:
         return math.sqrt(buffer_info.get('M2', 0.0) / (count - 1))
 
     def save_buff_skills(self, agent_id, task_id, task_times):
+        task_times = task_times
         buffer_info = self.skill_buffers[agent_id][task_id]
         # 获取当前统计信息
         count = buffer_info['count']
@@ -125,11 +126,11 @@ class Robots:
         
         
         count += 1 # 更新计数
-        delta = task_times - mean # 计算增量
+        delta = task_times/30 - mean # 计算增量
         mean += delta / count # 更新均值
         
         # 更新二阶矩 (用于计算方差和标准差)
-        delta2 = task_times - mean
+        delta2 = task_times/30 - mean
         M2 += delta * delta2
         
         # 保存更新后的统计量

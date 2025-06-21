@@ -96,11 +96,11 @@ class Runner:
             epoch_avg_rewards = epoch_avg_dict['epoch_rewards']
             avg_qmix_max_time = epoch_avg_dict['max_shift_time_wait']
             logger.info(f"Epoch {epoch}: AVG Reward={epoch_avg_rewards:.2f}, AVG Wait_time={qmix_avg_time:.2f}, MAX Wait_time={avg_qmix_max_time:.2f}")
-            # 执行训练步骤(buffer 小于200 没必要训练)
-            if self.buffer.current_size > 200:
+            # 执行训练步骤(buffer 小于500 没必要训练)
+            if self.buffer.current_size > 500:
                 for train_step in range(self.args.train_steps):
                     logger.info(f" buffer size={self.buffer.current_size:.2f}, batch_size={self.args.batch_size:.2f}")
-                    mini_batch = self.buffer.sample_probabilistic(min(self.buffer.current_size, self.args.batch_size))
+                    mini_batch = self.buffer.sample(min(self.buffer.current_size, self.args.batch_size))
                     with timer(f'train with train_steps={self.args.train_steps}'):
                         self.agents.train(mini_batch, train_steps)
                     train_steps += 1
