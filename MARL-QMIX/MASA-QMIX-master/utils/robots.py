@@ -4,10 +4,10 @@ robot类属性：
 位置信息、类型 robotID、空闲的标识符isIdle、0-1技能集合
 """
 import numpy as np
-from util import *
-from sites import Sites
+from utils.util import *
+from utils.sites import Sites
 from collections import defaultdict, deque
-from util import count_path_on_road
+from utils.util import count_path_on_road
 
 
 def cal_pos(start_pos, target_pos, speed, time_span):

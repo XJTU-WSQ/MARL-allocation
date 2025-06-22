@@ -75,6 +75,9 @@ class RolloutWorker:
         total_random_completed_num = 0
         total_greedy_completed_num = 0
 
+        max_wait_time = 0  # 最长等待时间
+        avg_service_coff = 0  # 平均服务系数
+
         while not terminated and step < self.episode_limit:
 
             self.env.update_task_window()
@@ -143,6 +146,13 @@ class RolloutWorker:
                 total_time_wait += self.env.time_wait[i]
                 total_time_on_road += self.env.time_on_road[i]
                 total_service_time += self.env.service_time[i]
+                if self.env.time_wait[i] > max_wait_time:
+                    max_wait_time = self.env.time_wait[i]
+                avg_service_coff += self.env.service_coff[i]
+
+        # 计算平均服务系数
+        if total_completed_num > 0:
+            avg_service_coff = avg_service_coff / total_completed_num
 
         # 计算总体完成时间
         if total_completed_num > 0:
@@ -242,24 +252,33 @@ class RolloutWorker:
 
         # 构建统计量
         stats = {
-            # qmix统计量 （完成量+时间)
+            # 任务完成相关
             "total_completed_num": total_completed_num,
             "completion_rate": completion_rate,
             "total_allocated_num": total_allocated_num,
             "allocated_rate": allocated_rate,
-            "episode_reward": episode_reward,
             "total_tasks_num": total_tasks,
-            "total_time_wait": total_time_wait,               # 所有已完成任务的总等待时间
-            "total_time_on_road": total_time_on_road,         # 所有已完成任务的总在途时间
-            "total_service_time": total_service_time,         # 所有已完成任务的总服务时间
-            "total_completion_time": total_completion_time,   # 所有已完成任务的总完成时间
 
+            # 时间相关
+            "total_time_wait": total_time_wait,
+            "max_wait_time": max_wait_time,
+            "total_time_on_road": total_time_on_road,
+            "total_service_time": total_service_time,
+            "total_completion_time": total_completion_time,
+
+            # 效率相关
+            "avg_service_coff": avg_service_coff,
+
+            # 奖励和学习相关
+            "episode_reward": episode_reward,
             "epsilon_value": epsilon,
-            # 对比算法统计量
+
+            # 对比算法统计
             "total_random_completion_time": total_random_completion_time,
             "total_greedy_completion_time": total_greedy_completion_time,
             "total_random_completed_num": total_random_completed_num,
             "total_greedy_completed_num": total_greedy_completed_num,
+
             "stats_dict": stats_dict
         }
 
