@@ -58,4 +58,8 @@ def get_mixer_args(args):
 
     # 梯度裁剪
     args.grad_norm_clip = 10  # 保持不变，防止梯度爆炸
+
+    # 添加权重参数
+    args.completion_weight = 0.7  # 初始完成率权重
+    args.time_weight = 0.3        # 初始时间效率权重
     return args

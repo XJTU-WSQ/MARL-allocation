@@ -38,6 +38,25 @@ class Runner:
     def run(self):
         train_steps = 0
         for epoch in range(self.args.n_epoch):
+            # 动态调整权重
+            if epoch < 1000:  # 初期阶段
+                self.agents.policy.args.completion_weight = 0.7
+                self.agents.policy.args.time_weight = 0.3
+            elif epoch < 5000:  # 中期阶段
+                self.agents.policy.args.completion_weight = 0.5
+                self.agents.policy.args.time_weight = 0.5
+            else:  # 后期阶段
+                self.agents.policy.args.completion_weight = 0.3
+                self.agents.policy.args.time_weight = 0.7
+            # 记录权重到TensorBoard
+            self.writer.add_scalar("Train/Completion_Weight",
+                                   self.agents.policy.args.completion_weight, epoch)
+            self.writer.add_scalar("Train/Time_Weight",
+                                   self.agents.policy.args.time_weight, epoch)
+
+            # 传递权重到环境
+            self.rolloutWorker.args.completion_weight = self.agents.policy.args.completion_weight
+            self.rolloutWorker.args.time_weight = self.agents.policy.args.time_weight
             # 显示输出
             if epoch > 100 and epoch % self.args.evaluate_cycle == 1:  # 确保测试在模型文件更新之后
                 episode_reward, avg_completion_time, avg_completion_rate = self.evaluate()
@@ -116,6 +135,15 @@ class Runner:
         """
         测试阶段：记录测试的指标
         """
+        original_completion_weight = self.agents.policy.args.completion_weight
+        original_time_weight = self.agents.policy.args.time_weight
+
+        # 评估时使用平衡权重
+        self.agents.policy.args.completion_weight = 0.5
+        self.agents.policy.args.time_weight = 0.5
+        self.rolloutWorker.args.completion_weight = 0.5
+        self.rolloutWorker.args.time_weight = 0.5
+
         epoch_info_dict = defaultdict(list)
         epoch_stats_type = ['total_completion_time', 'total_random_completion_time', 'total_greedy_completion_time', 'total_random_completed_num',
                             'total_greedy_completed_num', 'total_completed_num', 'completion_rate', 'total_allocated_num', 'allocated_rate',
@@ -158,6 +186,12 @@ class Runner:
             self.writer.add_scalar(f"Test/MIN {maxmin_stat}", epoch_min_dict[maxmin_stat], self.test_episode_count)
 
         self.test_episode_count += 1
+        # 恢复原始权重
+        self.agents.policy.args.completion_weight = original_completion_weight
+        self.agents.policy.args.time_weight = original_time_weight
+        self.rolloutWorker.args.completion_weight = original_completion_weight
+        self.rolloutWorker.args.time_weight = original_time_weight
+
         return epoch_avg_dict['epoch_rewards'], epoch_avg_dict['avg_completion_time'], epoch_avg_dict['completion_rate']
 
 
