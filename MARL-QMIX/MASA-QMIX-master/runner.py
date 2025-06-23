@@ -30,13 +30,10 @@ group_mapping = {
     'avg_service_time': '2_Time',
     'max_wait_time': '2_Time',
     'avg_service_coff': '4_Training',
-    'avg_random_completion_time': '3_Baselines',
     'avg_greedy_completion_time': '3_Baselines',
-    'random_completion_rate': '3_Baselines',
     'greedy_completion_rate': '3_Baselines',
     'epsilon_value': '4_Training',
     'total_allocated_num': '1_Completion',
-    'total_random_completed_num': '3_Baselines',
     'total_greedy_completed_num': '3_Baselines'
 }
 
@@ -60,41 +57,29 @@ class Runner:
     def run(self):
         train_steps = 0
         for epoch in range(self.args.n_epoch):
-            # 动态调整权重
-            if epoch < 1000:  # 初期阶段
-                self.agents.policy.args.completion_weight = 0.7
-                self.agents.policy.args.time_weight = 0.3
-            elif epoch < 5000:  # 中期阶段
-                self.agents.policy.args.completion_weight = 0.5
-                self.agents.policy.args.time_weight = 0.5
-            else:  # 后期阶段
-                self.agents.policy.args.completion_weight = 0.3
-                self.agents.policy.args.time_weight = 0.7
-            # 记录权重到TensorBoard
-            self.writer.add_scalar("Train/4_Training/Completion_Weight",
-                                   self.agents.policy.args.completion_weight, epoch)
-            self.writer.add_scalar("Train/4_Training/Time_Weight",
-                                   self.agents.policy.args.time_weight, epoch)
 
-            # 传递权重到环境
-            self.rolloutWorker.args.completion_weight = self.agents.policy.args.completion_weight
-            self.rolloutWorker.args.time_weight = self.agents.policy.args.time_weight
             # 显示输出
             if epoch > 100 and epoch % self.args.evaluate_cycle == 1:  # 确保测试在模型文件更新之后
                 self.evaluate()
             # 初始化统计字典
             epoch_info_dict = defaultdict(list)
+            epoch_reward_components = []  # 存储本epoch所有episode的奖励组成
 
             # 每个 epoch 收集多个 episode 的各类统计信息
             with timer(f'generate_episode with n_episodes={self.args.n_episodes}'):
                 for _ in range(self.args.n_episodes):
                     episode, episode_reward, terminated, episode_stats = self.rolloutWorker.generate_episode(epoch)
 
+                    # 收集奖励信息
+                    epoch_reward_components.append(episode_stats["reward_components"])
+                    epoch_info_dict['episode_immediate_reward'].append(episode_stats["episode_immediate_reward"])
+                    epoch_info_dict['episode_final_reward'].append(episode_stats["episode_final_reward"])
+
                     # 收集基础统计量
                     epoch_info_dict['epoch_rewards'].append(episode_reward)
                     for key in [
                         'total_completed_num', 'completion_rate', 'total_allocated_num', 'allocated_rate',
-                        'avg_service_coff', 'epsilon_value', 'total_random_completed_num', 'total_greedy_completed_num'
+                        'avg_service_coff', 'epsilon_value', 'total_greedy_completed_num'
                     ]:
                         if key in episode_stats:
                             epoch_info_dict[key].append(episode_stats[key])
@@ -113,11 +98,6 @@ class Runner:
                     epoch_info_dict['max_wait_time'].append(episode_stats.get('max_wait_time', 0))
 
                     # 计算对比算法统计量
-                    if episode_stats['total_random_completed_num'] > 0:
-                        epoch_info_dict['avg_random_completion_time'].append(episode_stats["total_random_completion_time"] / episode_stats["total_random_completed_num"])
-                    else:
-                        epoch_info_dict['avg_random_completion_time'].append(0)
-
                     if episode_stats['total_greedy_completed_num'] > 0:
                         epoch_info_dict['avg_greedy_completion_time'].append(episode_stats["total_greedy_completion_time"] / episode_stats["total_greedy_completed_num"])
                     else:
@@ -125,7 +105,6 @@ class Runner:
 
                     # 计算完成率
                     total_tasks = episode_stats.get('total_tasks_num', 1)
-                    epoch_info_dict['random_completion_rate'].append(episode_stats['total_random_completed_num'] / total_tasks)
                     epoch_info_dict['greedy_completion_rate'].append(episode_stats['total_greedy_completed_num'] / total_tasks)
                     # 保存 episode 到缓冲区
                     if _ == 0:
@@ -134,14 +113,22 @@ class Runner:
                         for key in episode_batch.keys():
                             episode_batch[key] = np.concatenate((episode_batch[key], episode[key]), axis=0)
 
-            # 计算并记录平均统计量
+            # 计算并记录平均奖励统计量
+            self.analyze_reward_components(epoch_reward_components, epoch)
 
+            # 计算即时奖励与最终奖励的比例
+            if epoch_info_dict['episode_immediate_reward'] and epoch_info_dict['episode_final_reward']:
+                avg_immediate = np.mean(epoch_info_dict['episode_immediate_reward'])
+                avg_final = np.mean(epoch_info_dict['episode_final_reward'])
+                ratio = avg_immediate / (avg_final + 1e-6)  # 防止除零错误
+                self.writer.add_scalar("RewardRatio/Immediate_vs_Final", ratio, epoch)
+
+            # 计算并记录平均统计量
             for stat_type in [
                 'epoch_rewards', 'total_completed_num', 'completion_rate', 'total_allocated_num', 'allocated_rate',
                 'avg_completion_time', 'avg_time_wait', 'avg_time_on_road', 'avg_service_time', 'max_wait_time',
-                'avg_service_coff', 'avg_random_completion_time', 'avg_greedy_completion_time',
-                'total_random_completed_num', 'total_greedy_completed_num',
-                'random_completion_rate', 'greedy_completion_rate', 'epsilon_value'
+                'avg_service_coff', 'avg_greedy_completion_time', 'episode_final_reward', 'episode_immediate_reward',
+                'total_greedy_completed_num', 'greedy_completion_rate', 'epsilon_value'
             ]:
                 if stat_type in epoch_info_dict:
                     avg_value = np.mean(epoch_info_dict[stat_type])
@@ -158,17 +145,15 @@ class Runner:
 
             # 记录对比算法的性能
             avg_completion_time = np.mean(epoch_info_dict['avg_completion_time'])
-            avg_random_completion_time = np.mean(epoch_info_dict['avg_random_completion_time'])
             avg_greedy_completion_time = np.mean(epoch_info_dict['avg_greedy_completion_time'])
 
             qmix_completion_rate = np.mean(epoch_info_dict['completion_rate'])
-            random_completion_rate = np.mean(epoch_info_dict['random_completion_rate'])
             greedy_completion_rate = np.mean(epoch_info_dict['greedy_completion_rate'])
 
             logger.info(f'Compare average_completion_time: QMIX={avg_completion_time:.2f} '
-                        f'random={avg_random_completion_time:.2f} greedy={avg_greedy_completion_time:.2f}')
+                        f'greedy={avg_greedy_completion_time:.2f}')
             logger.info(f'Compare completion_rate: QMIX={qmix_completion_rate * 100:.2f}% '
-                        f'random={random_completion_rate * 100:.2f}% greedy={greedy_completion_rate * 100:.2f}%')
+                        f'greedy={greedy_completion_rate * 100:.2f}%')
 
             # 保存 episode 到缓冲区
             self.buffer.store_episode(episode_batch)
@@ -194,16 +179,6 @@ class Runner:
         """
         测试阶段：记录测试的指标
         """
-        # 保存原始权重
-        original_completion_weight = self.agents.policy.args.completion_weight
-        original_time_weight = self.agents.policy.args.time_weight
-
-        # 评估时使用平衡权重
-        self.agents.policy.args.completion_weight = 0.5
-        self.agents.policy.args.time_weight = 0.5
-        self.rolloutWorker.args.completion_weight = 0.5
-        self.rolloutWorker.args.time_weight = 0.5
-
         # 初始化统计字典
         epoch_info_dict = defaultdict(list)
 
@@ -217,7 +192,7 @@ class Runner:
                 for key in [
                     'total_completed_num', 'completion_rate', 'total_allocated_num', 'allocated_rate',
                     'avg_service_coff', 'epsilon_value',
-                    'total_random_completed_num', 'total_greedy_completed_num'
+                    'total_greedy_completed_num'
                 ]:
                     if key in episode_stats:
                         epoch_info_dict[key].append(episode_stats[key])
@@ -244,13 +219,6 @@ class Runner:
                 epoch_info_dict['max_wait_time'].append(episode_stats.get('max_wait_time', 0))
 
                 # 计算对比算法统计量
-                if episode_stats['total_random_completed_num'] > 0:
-                    epoch_info_dict['avg_random_completion_time'].append(
-                        episode_stats["total_random_completion_time"] / episode_stats["total_random_completed_num"]
-                    )
-                else:
-                    epoch_info_dict['avg_random_completion_time'].append(0)
-
                 if episode_stats['total_greedy_completed_num'] > 0:
                     epoch_info_dict['avg_greedy_completion_time'].append(
                         episode_stats["total_greedy_completion_time"] / episode_stats["total_greedy_completed_num"]
@@ -260,9 +228,6 @@ class Runner:
 
                 # 计算完成率
                 total_tasks = episode_stats.get('total_tasks_num', 1)
-                epoch_info_dict['random_completion_rate'].append(
-                    episode_stats['total_random_completed_num'] / total_tasks
-                )
                 epoch_info_dict['greedy_completion_rate'].append(
                     episode_stats['total_greedy_completed_num'] / total_tasks
                 )
@@ -271,9 +236,8 @@ class Runner:
         for stat_type in [
             'epoch_rewards', 'total_completed_num', 'completion_rate', 'total_allocated_num', 'allocated_rate',
             'avg_completion_time', 'avg_time_wait', 'avg_time_on_road', 'avg_service_time', 'max_wait_time',
-            'avg_service_coff', 'avg_random_completion_time', 'avg_greedy_completion_time',
-            'total_random_completed_num', 'total_greedy_completed_num',
-            'random_completion_rate', 'greedy_completion_rate', 'epsilon_value'
+            'avg_service_coff', 'avg_greedy_completion_time', 'episode_final_reward', 'episode_immediate_reward',
+            'total_greedy_completed_num', 'greedy_completion_rate', 'epsilon_value'
         ]:
             if stat_type in epoch_info_dict:
                 avg_value = np.mean(epoch_info_dict[stat_type])
@@ -294,28 +258,58 @@ class Runner:
         avg_completion_rate = np.mean(epoch_info_dict['completion_rate'])
 
         # 记录对比算法性能
-        avg_random_completion_time = np.mean(epoch_info_dict['avg_random_completion_time'])
         avg_greedy_completion_time = np.mean(epoch_info_dict['avg_greedy_completion_time'])
-        random_completion_rate = np.mean(epoch_info_dict['random_completion_rate'])
         greedy_completion_rate = np.mean(epoch_info_dict['greedy_completion_rate'])
 
         logger.info(f'Test Compare average_completion_time: QMIX={avg_completion_time:.2f} '
-                    f'random={avg_random_completion_time:.2f} greedy={avg_greedy_completion_time:.2f}')
+                    f'greedy={avg_greedy_completion_time:.2f}')
         logger.info(f'Test Compare completion_rate: QMIX={avg_completion_rate * 100:.2f}% '
-                    f'random={random_completion_rate * 100:.2f}% greedy={greedy_completion_rate * 100:.2f}%')
+                    f'greedy={greedy_completion_rate * 100:.2f}%')
 
         # 增加测试计数器
         self.test_episode_count += 1
 
-        # 恢复原始权重
-        self.agents.policy.args.completion_weight = original_completion_weight
-        self.agents.policy.args.time_weight = original_time_weight
-        self.rolloutWorker.args.completion_weight = original_completion_weight
-        self.rolloutWorker.args.time_weight = original_time_weight
-
         return avg_reward, avg_completion_time, avg_completion_rate
 
+    def analyze_reward_components(self, all_reward_components, epoch):
+        """
+        分析并记录奖励组成的统计信息
+        """
+        # 初始化统计字典
+        component_stats = {
+            "allocation": [],
+            "completion": [],
+            "efficiency": [],
+            "time_penalty": [],
+            "wait_penalty": [],
+            "total_immediate": [],
+            "final_completion": [],
+            "final_time": [],
+            "total_final": []
+        }
 
+        # 收集所有步骤的奖励组成（仅保留组件部分）
+        for episode_components in all_reward_components:
+            for step_components in episode_components:
+                for key in component_stats.keys():
+                    if key in step_components:
+                        component_stats[key].append(step_components[key])
 
+        # 计算每个组件的平均值
+        avg_components = {}
+        for key, values in component_stats.items():
+            if values:
+                avg_components[key] = np.mean(values)
 
+        # 记录到TensorBoard
+        for key, value in avg_components.items():
+            self.writer.add_scalar(f"RewardComponents/{key}", value, epoch)
+
+        # 计算组件比例（保留这部分）
+        if 'total_immediate' in avg_components:
+            total = avg_components['total_immediate']
+            for key in ['allocation', 'completion', 'efficiency', 'time_penalty', 'wait_penalty']:
+                if key in avg_components:
+                    percentage = avg_components[key] / (total + 1e-6) * 100
+                    self.writer.add_scalar(f"RewardPercentage/{key}", percentage, epoch)
 

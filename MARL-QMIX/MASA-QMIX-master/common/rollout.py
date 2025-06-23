@@ -28,7 +28,7 @@ class RolloutWorker:
     def generate_episode(self, episode_num=None, evaluate=False, 
                          tasks=None, task_type='qmix', evalue_epsilon=0):
         # 如果提供了固定任务集，则使用，否则生成新任务
-        global total_random_completion_time, total_greedy_completion_time, total_random_completed_num, total_greedy_completed_num
+        global total_greedy_completion_time, total_greedy_completed_num
         global fixed_initial_pos
         if tasks is not None:
             self.env.tasks_array = tasks
@@ -69,14 +69,12 @@ class RolloutWorker:
         total_time_on_road = 0            # 总体路程时长（已完成任务）
         total_service_time = 0            # 总体服务时长（已完成任务）
         total_completion_time = 0         # 总体完成时长（已完成任务）
-        total_random_completion_time = 0
         total_greedy_completion_time = 0
-
-        total_random_completed_num = 0
         total_greedy_completed_num = 0
 
         max_wait_time = 0  # 最长等待时间
         avg_service_coff = 0  # 平均服务系数
+        all_reward_components = []  # 存储所有步骤的奖励组成
 
         while not terminated and step < self.episode_limit:
 
@@ -94,12 +92,11 @@ class RolloutWorker:
                 actions_onehot.append(action_onehot)
             if task_type == 'qmix':
                 reward, terminated, info = self.env.step(actions)
-            elif task_type == 'random':
-                random_actions = self.env.assign_tasks_baseline(baseline_type='random')
-                reward, terminated, info = self.env.step(random_actions)
             elif task_type == 'greedy':
-                greedy_actions = self.env.assign_tasks_baseline(baseline_type='greedy')
+                greedy_actions = self.env.assign_tasks_baseline()
                 reward, terminated, info = self.env.step(greedy_actions)
+            # 记录奖励组成
+            all_reward_components.append(info["reward_components"])
             stats_dict[step] = info
 
             # 如果开启数据记录，将数据存入缓冲区
@@ -126,6 +123,7 @@ class RolloutWorker:
             r.append([reward])
             terminate.append([terminated])
             padded.append([0.])
+            episode_reward += reward
             step += 1
 
             if self.args.epsilon_anneal_scale == 'step' and evaluate != True and task_type == 'qmix':
@@ -193,37 +191,12 @@ class RolloutWorker:
             padded.append([1.])
             terminate.append([1.])  # 如果没有padding的情况下是没有terminal的
 
-        qmix_stats ={
-            # qmix统计量 （完成量+时间)
-            "total_completed_num": total_completed_num,
-            "total_completion_time": total_completion_time,
-        }
-
         if task_type == 'qmix':
-            _, _, _, random_stats =  self.generate_episode(episode_num=episode_num, evaluate=evaluate, 
-                            tasks=tasks, task_type='random', evalue_epsilon=evalue_epsilon)
             _, _, _, greedy_stats =  self.generate_episode(episode_num=episode_num, evaluate=evaluate, 
                             tasks=tasks, task_type='greedy', evalue_epsilon=evalue_epsilon)
 
-            completion_weight = self.args.completion_weight
-            time_weight = self.args.time_weight
-            total_random_completion_time = random_stats['total_completion_time']
             total_greedy_completion_time = greedy_stats['total_completion_time']
-
-            total_random_completed_num = random_stats['total_completed_num']
             total_greedy_completed_num = greedy_stats["total_completed_num"]
-
-            # 使用新的平衡奖励函数
-            # 使用新的平衡奖励函数，传入权重
-            episode_reward = balanced_reward(
-                qmix_stats, random_stats, greedy_stats, epsilon,
-                completion_weight, time_weight
-            )
-
-            # 调整每一步奖励
-            r = [[r[i][0] + episode_reward / len(r)] for i in range(len(r))]
-
-            # 全局奖励：考虑平均等待时间，已分配任务数和已完成任务数
 
         episode = dict(o=o.copy(),
                        s=s.copy(),
@@ -274,12 +247,13 @@ class RolloutWorker:
             "epsilon_value": epsilon,
 
             # 对比算法统计
-            "total_random_completion_time": total_random_completion_time,
             "total_greedy_completion_time": total_greedy_completion_time,
-            "total_random_completed_num": total_random_completed_num,
             "total_greedy_completed_num": total_greedy_completed_num,
 
-            "stats_dict": stats_dict
+            "stats_dict": stats_dict,
+            "reward_components": all_reward_components,  # 所有步骤的奖励组成
+            "episode_immediate_reward": self.env.episode_immediate_reward,  # 整个episode的即时奖励总和
+            "episode_final_reward": self.env.episode_final_reward  # 整个episode的最终奖励
         }
 
         return episode, episode_reward, terminated, stats
@@ -303,30 +277,6 @@ def convert_to_native(obj):
         return {k: convert_to_native(v) for k, v in obj.items()}  # 递归处理字典
     else:
         return obj  # 返回
-
-
-def balanced_reward(qmix_stats, random_stats, greedy_stats, epsilon, completion_weight, time_weight):
-    """
-    平衡完成率和时间效率的全局奖励函数
-    """
-    # 获取QMIX性能
-    qmix_completed = qmix_stats['total_completed_num']
-    qmix_time = qmix_stats['total_completion_time']
-
-    # 获取基线性能（取两种基线中较好的）
-    base_completed = max(random_stats['total_completed_num'],
-                         greedy_stats['total_completed_num'])
-    base_time = min(random_stats['total_completion_time'],
-                    greedy_stats['total_completion_time'])
-
-    # 计算相对提升
-    completed_ratio = (qmix_completed - base_completed) / (base_completed + 1e-5)
-    time_ratio = (base_time - qmix_time) / (base_time + 1e-5)
-
-    # 使用传入的权重
-    reward = 5.0 * (completion_weight * (2 / (1 + np.exp(-completed_ratio)) - 1) +
-                    time_weight * (2 / (1 + np.exp(-time_ratio)) - 1))
-    return reward
 
 
 

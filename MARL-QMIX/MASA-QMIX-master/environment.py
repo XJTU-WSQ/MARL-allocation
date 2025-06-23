@@ -14,7 +14,7 @@ from task import task_generator
 
 class ScheduleEnv(gym.Env, ABC):
 
-    def __init__(self):
+    def __init__(self, episode_limit=120):
         # 实例化
         self.sites = Sites()
         self.robots = Robots()
@@ -23,14 +23,16 @@ class ScheduleEnv(gym.Env, ABC):
         # self.robots_state = [0 for _ in range(self.robots.num_robots)]
         # self.robots_work_times = [0 for _ in range(self.robots.num_robots)]
         # 奖励函数的权重
-        self.concurrent_reward_weight = 5.5
-        self.wait_penalty_weight = -0.1  # 等待一个任务就进行一个惩罚
-        self.service_cost_penalty_weight = -0.01  # 服务成本惩罚的权重
-        self.conflict_penalty_weight = -1
+        self.episode_limit = episode_limit
+        self.current_step = 0  # 新增：记录当前步数
         # 任务相关参数
         self.tasks_array = task_generator.generate_tasks()
         # task： Task index|Time|Location|Task Type|Target|Duration
         self.task_window_size = 10
+
+        self.reward_components = []  # 新增：记录每个步骤的奖励组成
+        self.episode_immediate_reward = 0  # 新增：记录整个episode的即时奖励总和
+        self.episode_final_reward = 0  # 新增：记录整个episode的最终奖励
         self.reset()  # 初始化环境
 
     def reset(self):
@@ -38,6 +40,7 @@ class ScheduleEnv(gym.Env, ABC):
         环境重置，初始化所有参数。
         """
         # 任务信息初始化
+        self.current_step = 0  # 重置步数计数器
         self.time_wait = [0 for _ in range(len(self.tasks_array))]
         self.time_on_road = [0 for _ in range(len(self.tasks_array))]
         self.service_time = [0 for _ in range(len(self.tasks_array))]
@@ -71,6 +74,10 @@ class ScheduleEnv(gym.Env, ABC):
         self.obs4marl = np.zeros((self.robots.num_robots, self.obs_shape), dtype=np.float32)
         self.robot_task_assignments = [[] for _ in range(self.robots.num_robots)]
         self.update_task_window()
+
+        self.reward_components = []  # 重置奖励记录
+        self.episode_immediate_reward = 0
+        self.episode_final_reward = 0
 
         return self.get_obs(), self.get_state()
 
@@ -298,54 +305,46 @@ class ScheduleEnv(gym.Env, ABC):
                 avail_actions[j] = 0  # 机器人技能不匹配，任务不可选
         return avail_actions
 
-    def assign_tasks_baseline(self, baseline_type='random'):
+    def assign_tasks_baseline(self):
         self.update_task_window()
         self.renew_wait_time()
 
         actions = [-1 for i in range(self.robots.num_robots)]
         robot_ids_list = list(range(self.robots.num_robots))
-        random.shuffle(robot_ids_list)
-        if baseline_type == 'random':
-            # Update the environment's task window and wait times
-            for robot_id in robot_ids_list:
-                available_actions = self.get_avail_agent_actions(robot_id)
 
-                # Randomly choose a valid action (including "do nothing")
-                valid_actions = [action for action, available in enumerate(available_actions) if available == 1]
-                actions[robot_id] = np.random.choice(valid_actions)
-        elif baseline_type == 'greedy':
-            robot_positions = self.robots.robot_pos
-            task_window = self.task_window
+        robot_positions = self.robots.robot_pos
+        task_window = self.task_window
 
-            # Assign the closest task to each robot
-            for robot_id in robot_ids_list:
-                robot_pos = robot_positions[robot_id]
-                closest_task = None
-                min_distance = float('inf')
+        # Assign the closest task to each robot
+        for robot_id in robot_ids_list:
+            robot_pos = robot_positions[robot_id]
+            closest_task = None
+            min_distance = float('inf')
 
-                # Get available actions for the robot
-                available_actions = self.get_avail_agent_actions(robot_id)
+            # Get available actions for the robot
+            available_actions = self.get_avail_agent_actions(robot_id)
 
-                # Iterate through the task window to find the closest task
-                for task_index, task in enumerate(task_window):
-                    if available_actions[task_index] == 0:  # Skip if the task is not executable
-                        continue
+            # Iterate through the task window to find the closest task
+            for task_index, task in enumerate(task_window):
+                if available_actions[task_index] == 0:  # Skip if the task is not executable
+                    continue
 
-                    task_pos = self.sites.sites_pos[task[2]]
-                    distance = np.linalg.norm(np.array(robot_pos) - np.array(task_pos))
+                task_pos = self.sites.sites_pos[task[2]]
+                distance = np.linalg.norm(np.array(robot_pos) - np.array(task_pos))
 
-                    # Update the closest task
-                    if distance < min_distance:
-                        closest_task = task_index
-                        min_distance = distance
-                # If no suitable task is found, choose the "do nothing" action
-                actions[robot_id] = closest_task if closest_task is not None else len(task_window)
+                # Update the closest task
+                if distance < min_distance:
+                    closest_task = task_index
+                    min_distance = distance
+            # If no suitable task is found, choose the "do nothing" action
+            actions[robot_id] = closest_task if closest_task is not None else len(task_window)
         return actions
 
     def step(self, actions):
         """
         执行智能体的动作，更新环境状态，并计算综合奖励。
         """
+        self.current_step += 1
         time_step = 30  # 每个 step 的时间间隔(额外冗余 30*120=3600s， 120对应episode_limit)
         conflict_penalty = 0
         total_service_cost_penalty = 0
@@ -425,16 +424,14 @@ class ScheduleEnv(gym.Env, ABC):
                         self.service_time[task[0]] = service_time
                         self.service_coff[task[0]] = service_coff
                         service_coff_list.append(service_coff)
-                        total_service_cost_penalty += time_on_road * self.service_cost_penalty_weight
                     else:
-                        # 对冲突机器人进行检查，如果可以执行未分配任务但未执行，则惩罚
+                        # 对冲突机器人进行检查，如果可以执行未分配任务但未执行
                         for unallocated_task_index in unallocated_tasks:
                             unallocated_task = self.task_window[unallocated_task_index]
                             required_skills = self.tasks.required_skills[unallocated_task[3]]
                             if all(
                                 rs >= ts for rs, ts in zip(self.robots.get_skills(agent_id), required_skills)
                             ):
-                                conflict_penalty += self.conflict_penalty_weight
                                 break
             else:  # 没有冲突
                 agent_id = agents[0]
@@ -446,7 +443,7 @@ class ScheduleEnv(gym.Env, ABC):
                 self.service_time[task[0]] = service_time
                 self.service_coff[task[0]] = service_coff
                 service_coff_list.append(service_coff)
-                total_service_cost_penalty += time_on_road * self.service_cost_penalty_weight
+
             self.total_time_on_road += time_on_road
             self.total_time_on_road2 += time_on_road2
             self.total_service_time += service_time
@@ -454,31 +451,92 @@ class ScheduleEnv(gym.Env, ABC):
         # 更新时间步
         self.time += time_step
         self.total_time_wait = sum(self.time_wait) + self.total_time_on_road  # 累计等待时间
-        done = self.time > self.tasks_array[-1][1] and sum(self.tasks_completed) == len(self.tasks_array)
-
         shift_allocated_num = sum(self.tasks_allocated)-sum(freeze_dict['tasks_allocated'])
         shift_completed_num = sum(self.tasks_completed)-sum(freeze_dict['tasks_completed'])
 
-        # ===== 新增奖励组件 =====
-        # 基础分配奖励（鼓励分配任务）
-        allocation_reward = 0.2 * shift_allocated_num
+        # 只计算本步骤新完成任务的完成时间惩罚
+        new_completed_time_penalty = 0
+        for task_index in range(len(self.tasks_array)):
+            # 只处理本步骤新完成的任务
+            if self.tasks_completed[task_index] == 1 and freeze_dict['tasks_completed'][task_index] == 0:
+                # 惩罚与完成时间成正比，但归一化处理
+                completion_time = self.completed_tasks_time[-1]  # 获取最新完成的任务时间
+                normalized_time = completion_time / 1000  # 假设最大完成时间为1800秒(30分钟)
+                new_completed_time_penalty -= 1.5 * normalized_time  # 最大惩罚-1.5
 
-        # 完成奖励（直接奖励任务完成）
-        completion_reward = 1 * shift_completed_num
+        # ===== 重构奖励组件 =====
+        # 1. 分配奖励：鼓励分配任务
+        allocation_reward = 0.5 * shift_allocated_num
 
-        # 效率奖励（基于服务系数）
-        efficiency_reward = np.mean(service_coff_list) if service_coff_list else 0.0
+        # 2. 完成奖励：鼓励完成任务（主要目标）
+        completion_reward = 2.0 * shift_completed_num
 
-        # 时间惩罚（基于完成时间）
-        time_penalty = -0.01 * sum(self.completed_tasks_time)
+        # 3. 效率奖励：与服务系数挂钩
+        efficiency_reward = np.mean(service_coff_list) if service_coff_list else 0
 
-        # 综合即时奖励
-        total_reward = (
-                allocation_reward +
-                completion_reward +
-                efficiency_reward +
-                time_penalty
+        # 4. 时间惩罚：仅对新完成的任务
+        time_penalty = new_completed_time_penalty
+
+        # 5. 等待惩罚：惩罚未分配任务
+        wait_penalty = -0.01 * len(self.unallocated_tasks)
+
+        # 综合全局奖励（去除冲突惩罚）
+        immediate_reward = (
+            allocation_reward +
+            completion_reward +
+            efficiency_reward +
+            time_penalty +
+            wait_penalty
         )
+
+        step_reward_components = {
+            "allocation": allocation_reward,
+            "completion": completion_reward,
+            "efficiency": efficiency_reward,
+            "time_penalty": time_penalty,
+            "wait_penalty": wait_penalty,
+            "total_immediate": immediate_reward
+        }
+
+        self.reward_components.append(step_reward_components)
+        self.episode_immediate_reward += immediate_reward
+        total_reward = immediate_reward
+
+        # 修改done判断逻辑：达到最大步长或任务全部完成
+        max_steps_reached = self.current_step >= self.episode_limit  # 新增：检查是否达到最大步长
+        all_tasks_completed = sum(self.tasks_completed) == len(self.tasks_array)
+
+        done = all_tasks_completed or max_steps_reached  # 任一条件满足即结束
+
+        final_reward = 0
+        if done:
+            # 1. 完成率奖励（核心目标）
+            completion_rate = sum(self.tasks_completed) / len(self.tasks_array)
+
+            # 完成率奖励函数：非线性增长（完成率>80%时奖励大幅增加）
+            if completion_rate < 0.8:
+                completion_bonus = 0
+            else:
+                completion_bonus = 300 * completion_rate
+
+            # 2. 时间效率奖励（次要目标）
+            if sum(self.tasks_completed) > 0:
+                avg_completion_time = sum(self.completed_tasks_time) / sum(self.tasks_completed)
+                # 时间奖励函数：指数衰减奖励
+                time_bonus = 1500.0 * math.exp(-0.005 * avg_completion_time)  # 每增加100秒，奖励减半
+            else:
+                time_bonus = 0
+
+            # 最终奖励
+            final_reward = completion_bonus + time_bonus
+            total_reward += final_reward
+            self.episode_final_reward = final_reward
+
+            # 记录最终奖励组成
+            step_reward_components["final_completion"] = completion_bonus
+            step_reward_components["final_time"] = time_bonus
+            step_reward_components["total_final"] = final_reward
+
         info = {
             "done": done,
             "robots_state": self.robots_state,
@@ -494,7 +552,10 @@ class ScheduleEnv(gym.Env, ABC):
             'shift_allocated_num': shift_allocated_num,
             'shift_completed_num': shift_completed_num,
             'num_completed_tasks': len(self.completed_tasks_time),
-            'total_reward': total_reward
+            'total_reward': total_reward,
+            "reward_components": step_reward_components,  # 当前步骤的奖励组成
+            "episode_immediate_reward": self.episode_immediate_reward,  # 整个episode的即时奖励总和
+            "episode_final_reward": self.episode_final_reward  # 整个episode的最终奖励
         }
         return total_reward, done, info
 
@@ -507,6 +568,6 @@ class ScheduleEnv(gym.Env, ABC):
             "n_agents": self.robots.num_robots,  # 机器人数量
             "state_shape": len(self.get_state()),  # 全局状态向量的长度
             "obs_shape": self.obs_shape,  # 动态观测维度
-            "episode_limit": 120
+            "episode_limit": self.episode_limit
         }
 
