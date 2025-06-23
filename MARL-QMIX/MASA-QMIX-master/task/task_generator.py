@@ -136,6 +136,7 @@ def generate_exponential_process(time_window, n, rate):
             times.append(current_time)
     return np.sort(times)
 
+
 def generate_random_tasks(task_num=15):
     time_intervals = np.zeros((len(LOCATIONS), task_num))
     tasks = []
