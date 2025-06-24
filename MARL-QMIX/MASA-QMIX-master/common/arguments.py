@@ -34,7 +34,7 @@ def get_mixer_args(args):
     args.two_hyper_layers = False
     args.hyper_hidden_dim = 256
     # 学习率与探索
-    args.lr = 1e-4  #
+    args.lr = 5e-5  #
     args.max_epsilon = 0.9  # 初始探索率不变
     args.min_epsilon = 0.1  #
     args.anneal_steps = 2000*120*8  # 原为 200000，缩短衰减周期(epochs=3000,max_steps_limit_per_episode=120,n_episodes=8)
