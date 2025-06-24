@@ -85,28 +85,21 @@ class ReplayBuffer:
         return idx
 
     def _get_probabilistic_idx(self, batch_size):
-        """
-        基于奖励值概率选择要抽取的样本
-        """
+        # 计算每个episode的累积奖励（更合理的度量）
         try:
-            # 获取当前缓冲区中的所有奖励
-            current_rewards = self.buffers['r'][:self.current_size,-1,]
-            
-            probs = abs(current_rewards)+0.1 # 确保值为正
-            probs = probs / np.sum(probs) # 归一化概率
-            probs = 1 - probs # 绝对值越大，被选中删除的可能性越小
-            probs = probs / np.sum(probs)
-            probs = np.asarray(probs).flatten() # 确保 probs 是一维数组
+            cumulative_rewards = np.sum(self.buffers['r'][:self.current_size], axis=1)
 
-            # 根据概率随机选择要替换的索引
-            sample_idxs = np.random.choice(
-                np.arange(self.current_size), 
-                size=batch_size, 
-                replace=False,  # 不重复选择
-                p=probs
-            )
-        except Exception as e:
-            logger.error(f"Error in _get_probabilistic_idx: {e}")
-            # 如果发生错误，改为简单的随机抽样
-            sample_idxs = np.random.randint(0, self.current_size, batch_size)
-        return sample_idxs
+            # 方案1：优先高奖励（标准PER逻辑）
+            priorities = cumulative_rewards - np.min(cumulative_rewards) + 1e-5  # 确保正值
+
+            probs = priorities / np.sum(priorities)
+        except ValueError as e:  # 处理概率和不为1的情况
+            probs = np.ones(self.current_size) / self.current_size
+
+        return np.random.choice(
+            self.current_size,
+            size=batch_size,
+            p=probs.flatten()  # 确保一维概率
+        )
+
+

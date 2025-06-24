@@ -511,19 +511,18 @@ class ScheduleEnv(gym.Env, ABC):
         final_reward = 0
         if done:
             # 1. 完成率奖励（核心目标）
+            total_tasks = len(self.tasks_array)
+            task_density = total_tasks / self.robots.num_robots
             completion_rate = sum(self.tasks_completed) / len(self.tasks_array)
 
-            # 完成率奖励函数：非线性增长（完成率>80%时奖励大幅增加）
-            if completion_rate < 0.8:
-                completion_bonus = 0
-            else:
-                completion_bonus = 300 * completion_rate
+            # 完成率奖励函数：
+            completion_bonus = 40 * completion_rate * task_density
 
             # 2. 时间效率奖励（次要目标）
             if sum(self.tasks_completed) > 0:
                 avg_completion_time = sum(self.completed_tasks_time) / sum(self.tasks_completed)
                 # 时间奖励函数：指数衰减奖励
-                time_bonus = 1500.0 * math.exp(-0.005 * avg_completion_time)  # 每增加100秒，奖励减半
+                time_bonus = 300 * math.exp(-0.005 * avg_completion_time) * task_density  # 每增加100秒，奖励减半
             else:
                 time_bonus = 0
 
