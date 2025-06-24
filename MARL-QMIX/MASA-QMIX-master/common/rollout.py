@@ -137,7 +137,8 @@ class RolloutWorker:
         # === 在循环结束后添加统计量计算 ===
         total_allocated_num = sum(self.env.tasks_allocated)
         total_completed_num = sum(self.env.tasks_completed)
-
+        episode_immediate_reward = self.env.episode_immediate_reward
+        episode_final_reward = self.env.episode_final_reward
         # 计算已完成任务的时间统计
         for i in range(len(self.env.tasks_array)):
             if self.env.tasks_completed[i] == 1:
@@ -191,13 +192,6 @@ class RolloutWorker:
             padded.append([1.])
             terminate.append([1.])  # 如果没有padding的情况下是没有terminal的
 
-        if task_type == 'qmix':
-            _, _, _, greedy_stats =  self.generate_episode(episode_num=episode_num, evaluate=evaluate, 
-                            tasks=tasks, task_type='greedy', evalue_epsilon=evalue_epsilon)
-
-            total_greedy_completion_time = greedy_stats['total_completion_time']
-            total_greedy_completed_num = greedy_stats["total_completed_num"]
-
         episode = dict(o=o.copy(),
                        s=s.copy(),
                        u=u.copy(),
@@ -222,6 +216,13 @@ class RolloutWorker:
                 with open(f"./episode_logs/episode_{episode_num}.json", "w", encoding="utf-8") as f:
                     json.dump(episode_data, f, indent=4)
                 print(f"Episode {episode_num} data saved to episode_{episode_num}.json")
+
+        if task_type == 'qmix':
+            _, _, _, greedy_stats = self.generate_episode(episode_num=episode_num, evaluate=evaluate,
+                            tasks=tasks, task_type='greedy', evalue_epsilon=evalue_epsilon)
+
+            total_greedy_completion_time = greedy_stats['total_completion_time']
+            total_greedy_completed_num = greedy_stats["total_completed_num"]
 
         # 构建统计量
         stats = {
@@ -252,8 +253,8 @@ class RolloutWorker:
 
             "stats_dict": stats_dict,
             "reward_components": all_reward_components,  # 所有步骤的奖励组成
-            "episode_immediate_reward": self.env.episode_immediate_reward,  # 整个episode的即时奖励总和
-            "episode_final_reward": self.env.episode_final_reward  # 整个episode的最终奖励
+            "episode_immediate_reward": episode_immediate_reward,  # 整个episode的即时奖励总和
+            "episode_final_reward": episode_final_reward  # 整个episode的最终奖励
         }
 
         return episode, episode_reward, terminated, stats

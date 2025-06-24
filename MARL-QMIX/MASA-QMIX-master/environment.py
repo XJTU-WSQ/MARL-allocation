@@ -495,7 +495,7 @@ class ScheduleEnv(gym.Env, ABC):
             "efficiency": efficiency_reward,
             "time_penalty": time_penalty,
             "wait_penalty": wait_penalty,
-            "total_immediate": immediate_reward
+            "immediate": immediate_reward
         }
 
         self.reward_components.append(step_reward_components)
@@ -535,6 +535,7 @@ class ScheduleEnv(gym.Env, ABC):
             step_reward_components["final_completion"] = completion_bonus
             step_reward_components["final_time"] = time_bonus
             step_reward_components["total_final"] = final_reward
+            step_reward_components["total_immediate"] = self.episode_immediate_reward
 
         info = {
             "done": done,
