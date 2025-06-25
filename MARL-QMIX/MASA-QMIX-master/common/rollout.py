@@ -94,10 +94,10 @@ class RolloutWorker:
             if task_type == 'qmix':
                 reward, terminated, info = self.env.step(actions, task_priority_reward = self.task_priority_reward)
             elif task_type == 'greedy':
-                greedy_actions = self.env.assign_tasks_baseline()
+                greedy_actions = self.env.assign_tasks_baseline(baseline_type='greedy')
                 reward, terminated, info = self.env.step(greedy_actions, task_priority_reward = self.task_priority_reward)
             elif task_type == 'random':
-                random_actions = self.env.assign_tasks_baseline()
+                random_actions = self.env.assign_tasks_baseline(baseline_type='random')
                 reward, terminated, info = self.env.step(random_actions, task_priority_reward = self.task_priority_reward)
             # 记录奖励组成
             all_reward_components.append(info["reward_components"])

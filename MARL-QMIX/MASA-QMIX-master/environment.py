@@ -306,39 +306,48 @@ class ScheduleEnv(gym.Env, ABC):
                 avail_actions[j] = 0  # 机器人技能不匹配，任务不可选
         return avail_actions
 
-    def assign_tasks_baseline(self):
+    def assign_tasks_baseline(self, baseline_type='random'):
         self.update_task_window()
         self.renew_wait_time()
 
         actions = [-1 for i in range(self.robots.num_robots)]
         robot_ids_list = list(range(self.robots.num_robots))
+        random.shuffle(robot_ids_list)
+        if baseline_type == 'random':
+            # Update the environment's task window and wait times
+            for robot_id in robot_ids_list:
+                available_actions = self.get_avail_agent_actions(robot_id)
 
-        robot_positions = self.robots.robot_pos
-        task_window = self.task_window
+                # Randomly choose a valid action (including "do nothing")
+                valid_actions = [action for action, available in enumerate(available_actions) if available == 1]
+                actions[robot_id] = np.random.choice(valid_actions)
+        elif baseline_type == 'greedy':
+            robot_positions = self.robots.robot_pos
+            task_window = self.task_window
 
-        # Assign the closest task to each robot
-        for robot_id in robot_ids_list:
-            robot_pos = robot_positions[robot_id]
-            closest_task = None
-            min_distance = float('inf')
+            # Assign the closest task to each robot
+            for robot_id in robot_ids_list:
+                robot_pos = robot_positions[robot_id]
+                closest_task = None
+                min_distance = float('inf')
 
-            # Get available actions for the robot
-            available_actions = self.get_avail_agent_actions(robot_id)
+                # Get available actions for the robot
+                available_actions = self.get_avail_agent_actions(robot_id)
 
-            # Iterate through the task window to find the closest task
-            for task_index, task in enumerate(task_window):
-                if available_actions[task_index] == 0:  # Skip if the task is not executable
-                    continue
+                # Iterate through the task window to find the closest task
+                for task_index, task in enumerate(task_window):
+                    if available_actions[task_index] == 0:  # Skip if the task is not executable
+                        continue
 
-                task_pos = self.sites.sites_pos[task[2]]
-                distance = np.linalg.norm(np.array(robot_pos) - np.array(task_pos))
+                    task_pos = self.sites.sites_pos[task[2]]
+                    distance = np.linalg.norm(np.array(robot_pos) - np.array(task_pos))
 
-                # Update the closest task
-                if distance < min_distance:
-                    closest_task = task_index
-                    min_distance = distance
-            # If no suitable task is found, choose the "do nothing" action
-            actions[robot_id] = closest_task if closest_task is not None else len(task_window)
+                    # Update the closest task
+                    if distance < min_distance:
+                        closest_task = task_index
+                        min_distance = distance
+                # If no suitable task is found, choose the "do nothing" action
+                actions[robot_id] = closest_task if closest_task is not None else len(task_window)
         return actions
 
     def step(self, actions, task_priority_reward = False):
