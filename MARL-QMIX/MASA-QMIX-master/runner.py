@@ -127,7 +127,7 @@ class Runner:
             for stat_type in [
                 'epoch_rewards', 'total_completed_num', 'completion_rate', 'total_allocated_num', 'allocated_rate',
                 'avg_completion_time', 'avg_time_wait', 'avg_time_on_road', 'avg_service_time', 'max_wait_time',
-                'avg_service_coff', 'avg_greedy_completion_time', 'episode_final_reward', 'episode_immediate_reward',
+                'avg_service_coff', 'avg_greedy_completion_time',
                 'total_greedy_completed_num', 'greedy_completion_rate', 'epsilon_value'
             ]:
                 if stat_type in epoch_info_dict:
@@ -236,7 +236,7 @@ class Runner:
         for stat_type in [
             'epoch_rewards', 'total_completed_num', 'completion_rate', 'total_allocated_num', 'allocated_rate',
             'avg_completion_time', 'avg_time_wait', 'avg_time_on_road', 'avg_service_time', 'max_wait_time',
-            'avg_service_coff', 'avg_greedy_completion_time', 'episode_final_reward', 'episode_immediate_reward',
+            'avg_service_coff', 'avg_greedy_completion_time',
             'total_greedy_completed_num', 'greedy_completion_rate', 'epsilon_value'
         ]:
             if stat_type in epoch_info_dict:
@@ -282,10 +282,11 @@ class Runner:
             "efficiency": [],
             "time_penalty": [],
             "wait_penalty": [],
-            "total_immediate": [],
+            "immediate": [],
             "final_completion": [],
             "final_time": [],
-            "total_final": []
+            "total_final": [],
+            "total_immediate": []
         }
 
         # 收集所有步骤的奖励组成（仅保留组件部分）

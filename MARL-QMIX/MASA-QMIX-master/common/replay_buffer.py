@@ -85,28 +85,67 @@ class ReplayBuffer:
         return idx
 
     def _get_probabilistic_idx(self, batch_size):
-        """
-        基于奖励值概率选择要抽取的样本
-        """
         try:
-            # 获取当前缓冲区中的所有奖励
-            current_rewards = self.buffers['r'][:self.current_size,-1,]
-            
-            probs = abs(current_rewards)+0.1 # 确保值为正
-            probs = probs / np.sum(probs) # 归一化概率
-            probs = 1 - probs # 绝对值越大，被选中删除的可能性越小
-            probs = probs / np.sum(probs)
-            probs = np.asarray(probs).flatten() # 确保 probs 是一维数组
+            # 安全获取当前缓冲区有效大小
+            valid_size = min(self.current_size, self.buffers['r'].shape[0])
+            if valid_size == 0:
+                return np.array([], dtype=np.int32)  # 返回空数组
 
-            # 根据概率随机选择要替换的索引
-            sample_idxs = np.random.choice(
-                np.arange(self.current_size), 
-                size=batch_size, 
-                replace=False,  # 不重复选择
-                p=probs
+            # 获取奖励数据并转换为float32以提高精度
+            rewards = self.buffers['r'][:valid_size].astype(np.float32)
+
+            # 处理可能的NaN和Inf值
+            rewards = np.nan_to_num(rewards, nan=0.0, posinf=0.0, neginf=0.0)
+
+            # 计算累积奖励（沿时间轴求和）
+            cumulative_rewards = np.sum(rewards, axis=1)
+
+            # 处理全零奖励的特殊情况
+            if np.all(cumulative_rewards == 0):
+                # 所有奖励都为零时使用均匀分布
+                priorities = np.ones(valid_size, dtype=np.float32)
+            else:
+                # 确保优先级值为正（避免负值）
+                min_val = np.min(cumulative_rewards)
+                priorities = cumulative_rewards - min_val + 1e-5  # 确保正值
+
+                # 数值稳定处理：防止过大值导致溢出
+                max_priority = np.max(priorities)
+                if max_priority > 1e6:  # 检测可能溢出的情况
+                    priorities = priorities / (max_priority / 1e6)  # 缩小数值范围
+
+            # 计算概率
+            probs = priorities / np.sum(priorities)
+
+            # 检查概率和并修正浮点精度误差
+            probs_sum = np.sum(probs)
+            if abs(probs_sum - 1.0) > 1e-6:
+                probs = probs / probs_sum
+
+            # 动态决定是否允许重复采样
+            replace = batch_size > valid_size
+
+            # 确保请求的批量大小不超过可用样本数
+            sample_size = min(batch_size, valid_size)
+
+            # 安全采样
+            return np.random.choice(
+                np.arange(valid_size),
+                size=sample_size,
+                replace=replace,
+                p=probs.flatten()
             )
+
         except Exception as e:
-            logger.error(f"Error in _get_probabilistic_idx: {e}")
-            # 如果发生错误，改为简单的随机抽样
-            sample_idxs = np.random.randint(0, self.current_size, batch_size)
-        return sample_idxs
+            print(f"概率采样失败: {e}, 改用随机采样")
+            # 出错时回退到随机采样
+            valid_size = min(self.current_size, self.buffers['r'].shape[0])
+            replace = batch_size > valid_size
+            sample_size = min(batch_size, valid_size)
+            return np.random.choice(
+                np.arange(valid_size),
+                size=sample_size,
+                replace=replace
+            )
+
+

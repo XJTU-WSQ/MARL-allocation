@@ -54,7 +54,7 @@ def get_mixer_args(args):
     args.target_update_cycle = 200
 
     # 经验回放
-    args.batch_size = 64  # 保持不变，常见取值
+    args.batch_size = 32  # 保持不变，常见取值
     args.buffer_size = int(1e4)  # 原为 5e3，增大后可存更多样本，提升稳定性
 
     # 梯度裁剪
