@@ -15,7 +15,7 @@ def get_common_args():
     parser.add_argument('--reuse_network', type=bool, default=True, help='whether to use one network for all agents')
     parser.add_argument('--gamma', type=float, default=0.99, help='discount factor') # 折扣因子，原始论文默认0.99
     parser.add_argument('--optimizer', type=str, default="Adam", help='optimizer') # 支持 RMSprop 或 Adam
-    parser.add_argument('--evaluate_epoch', type=int, default=50, help='number of the epoch to evaluate the agent')
+    parser.add_argument('--evaluate_epoch', type=int, default=30, help='number of the epoch to evaluate the agent')
     parser.add_argument('--learn', type=bool, default=True, help='whether to train the model')
     parser.add_argument('--cuda', type=bool, default=True, help='whether to use the GPU')
     parser.add_argument('--map', type=str, default="Schedule250624", help='map name') # 仅用于模型存储路径
@@ -38,7 +38,7 @@ def get_mixer_args(args):
     args.lr = 5e-5  #
     args.max_epsilon = 0.9  # 初始探索率不变
     args.min_epsilon = 0.1  #
-    args.anneal_steps = 3000*120*8  # 原为 200000，缩短衰减周期(epochs=3000,max_steps_limit_per_episode=120,n_episodes=8)
+    args.anneal_steps = 2000*120*8  # 原为 200000，缩短衰减周期(epochs=3000,max_steps_limit_per_episode=120,n_episodes=8)
     args.epsilon_anneal_scale = 'step'
 
     # 训练总轮数与每轮收集
@@ -46,7 +46,7 @@ def get_mixer_args(args):
     args.n_episodes = 8  # 保持不变，每轮收集 8 个 episode 的数据
 
     # 每轮训练步数
-    args.train_steps = 2
+    args.train_steps = 4
 
     # 评估、保存与目标网络更新
     args.evaluate_cycle = 100  # 原为 50，评估不必过于频繁
