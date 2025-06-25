@@ -7,6 +7,7 @@ from agent.agent import Agents
 import pickle
 import os
 import numpy as np
+import random
 from collections import defaultdict
 from loguru import logger
 
@@ -46,6 +47,7 @@ def load_model_and_evaluate(file_path):
 
 
     for i, tasks in enumerate(all_task_sets):
+        random.seed(i) # 设定随机种子，确保不同算法下的同一批次的任务，其机器人的初始随机位置一致
         for task_type in task_type_list:
             _, _, _, stats = rolloutWorker.generate_episode(evaluate=True, 
                                                     tasks=tasks, task_type=task_type)  # 传入固定任务集
