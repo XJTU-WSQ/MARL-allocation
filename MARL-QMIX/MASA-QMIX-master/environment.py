@@ -272,9 +272,9 @@ class ScheduleEnv(gym.Env, ABC):
                                 other_progress])  # 任务进度(0-1)
             observation.extend(other_type_onehot)  # 类别one-hot
 
-        # observation 270 =
+        # observation 280 =
         #  10 = 5  + 5      -> 当前机器人位置（x,y)，状态，工作时间，机器人任务进度（任务已耗时/预计完成时间）（机器人空闲置0），机器人类别信息（one-hot, nums=5）
-        # 120 = 10 * 12     -> 10 * （任务信息（x,y,距离，已等待时间, 经验耗时均值，经验耗时标准差）+ 任务类型（one-hot, nums=6））
+        # 130 = 10 * 13     -> 10 * （任务信息（x,y,距离，已等待时间, 经验耗时均值，经验耗时标准差，任务优先级）+ 任务类型（one-hot, nums=6））
         # 140 = 14 * (5+5)  -> 其他所有机器人位置（x,y), 状态，工作时间，机器人任务进度（任务已耗时/预计完成时间）（机器人空闲置0），机器人类别信息（one-hot, nums=5）
         return np.array(observation, dtype=np.float32)
 
@@ -503,7 +503,6 @@ class ScheduleEnv(gym.Env, ABC):
             "efficiency": efficiency_reward,
             "time_penalty": time_penalty,
             "wait_penalty": wait_penalty,
-            "total_immediate": immediate_reward,
             "avg_task_priority": avg_task_priority,
             "immediate": immediate_reward
         }
