@@ -211,11 +211,11 @@ class ScheduleEnv(gym.Env, ABC):
         observation.append(task_progress)  # 任务进度(0-1)
         observation.extend(robot_type_onehot)  # 机器人类别(one-hot)
 
-        # 2. 添加任务窗口信息（任务信息（x,y,距离，已等待时间, 经验耗时均值，经验耗时标准差）+ 任务类型（one-hot, nums=6））
+        # 2. 添加任务窗口信息（任务信息（x,y,距离，已等待时间, 经验耗时均值，经验耗时标准差，任务优先级）+ 任务类型（one-hot, nums=6））
         task_features = []
         for i, task in enumerate(self.task_window):
             if all(x == 0 for x in task) or avail_action[i] == 0:  # 占位符任务或不可执行
-                task_features.append([0.0]*12)  # 占位符
+                task_features.append([0.0]*13)  # 占位符
             else:
                 [task_index, _, site_id, task_type, destination_id, _] = task
                 if task_type == 2 or task_type == 3:
@@ -233,10 +233,11 @@ class ScheduleEnv(gym.Env, ABC):
                 task_type_features[task_type] = 1
                 mean = self.robots.get_buff_skills_coff_mean(robot_id, task_type)
                 std = self.robots.get_buff_skills_coff_std(robot_id, task_type)
-                task_features.append([task_x, task_y, dis, wait_time, mean, std]+task_type_features)
+                task_priority = self.tasks.task_priority[task_type]
+                task_features.append([task_x, task_y, dis, wait_time, mean, std, task_priority]+task_type_features)
 
         # 填充任务窗口
-        task_features += [[0.0] * 12] * (max_task_window_size - len(task_features))
+        task_features += [[0.0] * 13] * (max_task_window_size - len(task_features))
         for feature in task_features[:max_task_window_size]:
             observation.extend(feature)
 
@@ -340,7 +341,7 @@ class ScheduleEnv(gym.Env, ABC):
             actions[robot_id] = closest_task if closest_task is not None else len(task_window)
         return actions
 
-    def step(self, actions):
+    def step(self, actions, task_priority_reward = False):
         """
         执行智能体的动作，更新环境状态，并计算综合奖励。
         """
@@ -349,6 +350,8 @@ class ScheduleEnv(gym.Env, ABC):
         conflict_penalty = 0
         total_service_cost_penalty = 0
         service_coff_list = []
+        task_priority_list = []
+
         freeze_dict = {
             'robots_state': self.robots_state.copy(),
             'robots_work_times': self.robots_work_times,
@@ -394,6 +397,7 @@ class ScheduleEnv(gym.Env, ABC):
                                        self.time_on_road[task_index] +
                                        self.service_time[task_index])
                     self.completed_tasks_time.append(completion_time)
+                    task_priority_list.append(self.tasks.task_priority[task_info[3]])
 
         # 遍历所有机器人动作，分配任务并记录任务分配
         for robot_id, action in enumerate(actions):
@@ -464,18 +468,22 @@ class ScheduleEnv(gym.Env, ABC):
                 normalized_time = completion_time / 1000  # 假设最大完成时间为1800秒(30分钟)
                 new_completed_time_penalty -= 1.5 * normalized_time  # 最大惩罚-1.5
 
+        if task_priority_reward and len(task_priority_list)>0:
+            avg_task_priority = np.mean(task_priority_list)
+        else:
+            avg_task_priority = 1
         # ===== 重构奖励组件 =====
         # 1. 分配奖励：鼓励分配任务
         allocation_reward = 0.5 * shift_allocated_num
 
         # 2. 完成奖励：鼓励完成任务（主要目标）
-        completion_reward = 2.0 * shift_completed_num
+        completion_reward = 2.0 * shift_completed_num * avg_task_priority
 
         # 3. 效率奖励：与服务系数挂钩
         efficiency_reward = np.mean(service_coff_list) if service_coff_list else 0
 
         # 4. 时间惩罚：仅对新完成的任务
-        time_penalty = new_completed_time_penalty
+        time_penalty = new_completed_time_penalty * avg_task_priority
 
         # 5. 等待惩罚：惩罚未分配任务
         wait_penalty = -0.01 * len(self.unallocated_tasks)
@@ -495,7 +503,8 @@ class ScheduleEnv(gym.Env, ABC):
             "efficiency": efficiency_reward,
             "time_penalty": time_penalty,
             "wait_penalty": wait_penalty,
-            "total_immediate": immediate_reward
+            "total_immediate": immediate_reward,
+            "avg_task_priority": avg_task_priority,
         }
 
         self.reward_components.append(step_reward_components)
@@ -521,7 +530,11 @@ class ScheduleEnv(gym.Env, ABC):
 
             # 2. 时间效率奖励（次要目标）
             if sum(self.tasks_completed) > 0:
-                avg_completion_time = sum(self.completed_tasks_time) / sum(self.tasks_completed)
+                if task_priority_reward:
+                    task_priority_weight = [task_info[3] for task_info in self.tasks_array]
+                    avg_completion_time = sum(time * weight for time, weight in zip(self.completed_tasks_time, task_priority_weight)) / sum(task_priority_weight)
+                else:
+                    avg_completion_time = sum(self.completed_tasks_time) / sum(self.tasks_completed)
                 # 时间奖励函数：指数衰减奖励
                 time_bonus = 1500.0 * math.exp(-0.005 * avg_completion_time)  # 每增加100秒，奖励减半
             else:

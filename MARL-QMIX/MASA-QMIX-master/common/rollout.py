@@ -16,6 +16,7 @@ class RolloutWorker:
         self.n_agents = args.n_agents
         self.state_shape = args.state_shape
         self.obs_shape = args.obs_shape
+        self.task_priority_reward = args.task_priority_reward
         self.args = args
 
         self.epsilon = args.max_epsilon
@@ -74,13 +75,14 @@ class RolloutWorker:
         max_wait_time = 0  # 最长等待时间
         avg_service_coff = 0  # 平均服务系数
         all_reward_components = []  # 存储所有步骤的奖励组成
-
+        
         while not terminated and step < self.episode_limit:
 
             self.env.update_task_window()
             self.env.renew_wait_time()
             obs = self.env.get_obs()
             state = self.env.get_state()
+            reward_weight = [] # 存储本次迭代中的任务优先级属性
 
             avail_actions = [self.env.get_avail_agent_actions(agent_id) for agent_id in range(self.n_agents)]
             actions = self.agents.choose_actions_batch(obs, avail_actions, epsilon)
@@ -90,10 +92,13 @@ class RolloutWorker:
                 action_onehot[action] = 1
                 actions_onehot.append(action_onehot)
             if task_type == 'qmix':
-                reward, terminated, info = self.env.step(actions)
+                reward, terminated, info = self.env.step(actions, task_priority_reward = self.task_priority_reward)
             elif task_type == 'greedy':
                 greedy_actions = self.env.assign_tasks_baseline()
-                reward, terminated, info = self.env.step(greedy_actions)
+                reward, terminated, info = self.env.step(greedy_actions, task_priority_reward = self.task_priority_reward)
+            elif task_type == 'random':
+                random_actions = self.env.assign_tasks_baseline()
+                reward, terminated, info = self.env.step(random_actions, task_priority_reward = self.task_priority_reward)
             # 记录奖励组成
             all_reward_components.append(info["reward_components"])
             stats_dict[step] = info
@@ -196,9 +201,6 @@ class RolloutWorker:
             total_greedy_completion_time = greedy_stats['total_completion_time']
             total_greedy_completed_num = greedy_stats["total_completed_num"]
 
-            episode_reward = relative_reward(total_completed_num, total_greedy_completed_num, total_random_completed_num, epsilon)
-            r = [[(r[i][0]-0.5)*abs(episode_reward)/2+episode_reward] for i in range(len(r))]
-            # 全局奖励：考虑平均等待时间，已分配任务数和已完成任务数
 
         episode = dict(o=o.copy(),
                        s=s.copy(),

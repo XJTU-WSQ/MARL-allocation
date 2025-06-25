@@ -22,15 +22,15 @@ LOCATIONS = ["Room1", "Room2", "Room3", "Room4", "Room5", "Room6", "Room7", "Roo
              "Room10", "Room11", "Room12", "Dining Room", "Medical Room",  "Outdoor Area", "Activity Room", "Restroom"]
 
 TASK_TYPES = {
-    "general": [1, 2, 3, 4, 5],
-    "canteen": [1, 2, 3, 4, 5],
-    "toilet":  [1, 3, 5]
+    "general": [0, 1, 2, 3, 4, 5],
+    "canteen": [0, 1, 2, 3, 4, 5],
+    "toilet":  [0, 1, 3, 5]
 }
 # "移动辅助任务", "送餐", "私人物品递送", "情感陪护", "康复训练"
 TASK_PROBABILITIES = {
-    "general": [0.3, 0.2, 0.2, 0.2, 0.1],
-    "canteen": [0.2, 0.4, 0.2, 0.1, 0.1],
-    "toilet":  [0.6, 0.1, 0.3]
+    "general": [0.05, 0.3, 0.2, 0.2, 0.15, 0.1],
+    "canteen": [0.05, 0.2, 0.35, 0.2, 0.1, 0.1],
+    "toilet":  [0.1, 0.6, 0.1, 0.2]
 }
 
 

@@ -18,9 +18,10 @@ def get_common_args():
     parser.add_argument('--evaluate_epoch', type=int, default=50, help='number of the epoch to evaluate the agent')
     parser.add_argument('--learn', type=bool, default=True, help='whether to train the model')
     parser.add_argument('--cuda', type=bool, default=True, help='whether to use the GPU')
-    parser.add_argument('--map', type=str, default="Schedule250622", help='map name') # 仅用于模型存储路径
+    parser.add_argument('--map', type=str, default="Schedule250624", help='map name') # 仅用于模型存储路径
     parser.add_argument('--log_step_data', type=bool, default=False, help='Log step data for debugging')
     parser.add_argument("--use_tensorboard", type=bool, default=True, help="Enable TensorBoard logging")
+    parser.add_argument("--task_priority_reward", type=bool, default=True, help="Enable reward with task_priority weight")
     parser.add_argument("--run_name", type=str, default="default_run", help="Name of the current run") # 仅用于tensorboard任务标识 
     args = parser.parse_args()
     return args
@@ -34,7 +35,7 @@ def get_mixer_args(args):
     args.two_hyper_layers = False
     args.hyper_hidden_dim = 256
     # 学习率与探索
-    args.lr = 2e-5  #
+    args.lr = 5e-5  #
     args.max_epsilon = 0.9  # 初始探索率不变
     args.min_epsilon = 0.1  #
     args.anneal_steps = 3000*120*8  # 原为 200000，缩短衰减周期(epochs=3000,max_steps_limit_per_episode=120,n_episodes=8)

@@ -143,8 +143,8 @@ class Robots:
     def execute_task(self, robot_id, task):
         # 机器人的任务信息：
         [task_index, requests_time, site_id, task_id, destination_id, service_time] = task
-        # 根据能力系数计算实际服务时长
-        service_coff = self.get_skills_coff(robot_id)[task_id - 1]
+        # 根据能力系数计算实际服务时长(临时处理， 兼容紧急任务的情况)
+        service_coff = self.get_skills_coff(robot_id)[task_id-1] if task_id>0 else self.get_skills_coff(robot_id)[3]
         real_service_time = np.ceil(service_time/service_coff)
 
         # 机器人的类型和速度

@@ -14,7 +14,6 @@ def load_model_and_evaluate(file_path):
     # 加载固定任务集
     with open(file_path, "rb") as f:
         all_task_sets = pickle.load(f)
-    task_type_list = ['qmix','random','greedy']
     # 设置参数
     args = get_common_args()
     args = get_mixer_args(args)
@@ -45,21 +44,32 @@ def load_model_and_evaluate(file_path):
 
 
 
-    for i, tasks in enumerate(all_task_sets):
-        for task_type in task_type_list:
-            _, _, _, stats = rolloutWorker.generate_episode(evaluate=True, 
-                                                    tasks=tasks, task_type=task_type)  # 传入固定任务集
-            avg_wait_times[task_type].append(stats["total_time_wait"]/ stats["total_allocated_num"])
-            completion_rates[task_type].append(stats["total_completed_num"] / stats["total_tasks_num"])
-            max_wait_times[task_type].append(stats["max_wait_time"])
-            allocated_rates[task_type].append(stats["total_allocated_num"] / stats["total_tasks_num"])
-            avg_service_time[task_type].append(stats['total_service_time']/stats['total_completed_num'])
-            avg_completed_time[task_type].append(stats['total_completion_time']/stats['total_completed_num'])
+    for i, tasks in enumerate(all_task_sets[:50]):
+        
+        _, _, _, stats = rolloutWorker.generate_episode(evaluate=True, 
+                                                tasks=tasks, task_type='qmix')  # 传入固定任务集
+
+        for task_type in [0,1,2,3,4,5]:
+            idx = np.array([t[3] for t in tasks])==task_type
             
-            logger.info(f"Run {task_type} {i + 1}: AVG wait time = {avg_wait_times[task_type][-1]:.2}, completion_rate = {completion_rates[task_type][-1]:.2%}")
-            logger.info(f"Run {task_type} {i + 1}: MAX wait time = {stats['max_wait_time']:.2}, allocated_rate = {allocated_rates[task_type][-1]:.2%}")
-            logger.info(f"Run {task_type} {i + 1}: AVG service time = {avg_service_time[task_type][-1]:.2}, AVG completed time = {avg_completed_time[task_type][-1]:.2}")
-    for task_type in task_type_list:
+            
+            tasks_allocated_part = np.array(stats['stats_dict'][119]['tasks_allocated'])[idx]
+            tasks_completed_part = np.array(stats['stats_dict'][119]['tasks_completed'])[idx]
+            wait_times_part = np.array(stats['stats_dict'][119]['time_wait'])[idx]
+            service_times_part = np.array(stats['stats_dict'][119]['service_time'])[idx]
+            time_on_road_part = np.array(stats['stats_dict'][119]['time_on_road'])[idx]
+            completed_tasks_time_part = wait_times_part + time_on_road_part + service_times_part
+
+            
+            completion_rates[task_type].append(tasks_completed_part.sum()/tasks_completed_part.shape[0])
+            allocated_rates[task_type].append(tasks_allocated_part.sum()/tasks_allocated_part.shape[0])
+            avg_wait_times[task_type].append(wait_times_part.mean())
+            avg_service_time[task_type].append(service_times_part.mean())
+            avg_completed_time[task_type].append(completed_tasks_time_part.mean())
+            
+            logger.info(f"Run {task_type} {i + 1}: allocated_rate = {allocated_rates[task_type][-1]:.2%}, completion_rate = {completion_rates[task_type][-1]:.2%}")
+            logger.info(f"Run {task_type} {i + 1}: AVG wait time = {avg_wait_times[task_type][-1]:.2}, AVG service time = {avg_service_time[task_type][-1]:.2}, AVG completed time = {avg_completed_time[task_type][-1]:.2}")
+    for task_type in [0,1,2,3,4,5]:
         average_wait_time = np.mean(avg_wait_times[task_type])
         average_max_wait_times = np.mean(max_wait_times[task_type])
         average_completion_rate = np.mean(completion_rates[task_type])
@@ -68,7 +78,6 @@ def load_model_and_evaluate(file_path):
         average_completed_time = np.mean(avg_completed_time[task_type])
         
         logger.info(f"Average wait time over {len(all_task_sets)} runs with {task_type}: {average_wait_time:.2}")
-        logger.info(f"Average max wait time over {len(all_task_sets)} runs with {task_type}: {average_max_wait_times:.2}")
         logger.info(f"Average completion rate over {len(all_task_sets)} runs with {task_type}: {average_completion_rate:.2%}")
         logger.info(f"Average allocated rate over {len(all_task_sets)} runs with {task_type}: {average_allocated_rate:.2%}")
         logger.info(f"Average service time over {len(all_task_sets)} runs with {task_type}: {average_service_time:.2}")
