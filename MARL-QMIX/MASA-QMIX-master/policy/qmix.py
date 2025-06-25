@@ -34,9 +34,9 @@ class QMIX:
         self.model_dir = args.model_dir + '/' + args.alg + '/' + args.map
         # 如果存在模型则加载模型
         if self.args.load_model:
-            if os.path.exists(self.model_dir + '/66_rnn_net_params.pkl'):
-                path_rnn = self.model_dir + '/66_rnn_net_params.pkl'
-                path_qmix = self.model_dir + '/66_qmix_net_params.pkl'
+            if os.path.exists(self.model_dir + '/65_rnn_net_params.pkl'):
+                path_rnn = self.model_dir + '/65_rnn_net_params.pkl'
+                path_qmix = self.model_dir + '/65_qmix_net_params.pkl'
                 map_location = 'cuda:0' if self.args.cuda else 'cpu'
                 self.eval_rnn.load_state_dict(torch.load(path_rnn, map_location=map_location))
                 self.eval_qmix_net.load_state_dict(torch.load(path_qmix, map_location=map_location))

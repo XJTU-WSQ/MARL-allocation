@@ -10,11 +10,14 @@ import numpy as np
 from collections import defaultdict
 from loguru import logger
 
+
 def load_model_and_evaluate(file_path):
     # 加载固定任务集
     with open(file_path, "rb") as f:
         all_task_sets = pickle.load(f)
-    task_type_list = ['qmix','random','greedy']
+    # 只比较qmix和greedy算法
+    task_type_list = ['qmix', 'greedy']
+
     # 设置参数
     args = get_common_args()
     args = get_mixer_args(args)
@@ -25,6 +28,7 @@ def load_model_and_evaluate(file_path):
     args.state_shape = env_info["state_shape"]
     args.obs_shape = env_info["obs_shape"]
     args.episode_limit = env_info["episode_limit"]
+
     # 初始化 Runner 和模型
     runner = Runner(env, args)
     args.load_model = True  # 确保加载模型
@@ -35,49 +39,72 @@ def load_model_and_evaluate(file_path):
     agents = Agents(args)
     rolloutWorker = RolloutWorker(env, agents, args)
 
-    # 评估任务集
-    avg_wait_times = defaultdict(list)
+    # 评估任务集 - 只关注完成率和完成时间
     completion_rates = defaultdict(list)
-    max_wait_times = defaultdict(list)
-    allocated_rates = defaultdict(list)
-    avg_service_time = defaultdict(list)
-    avg_completed_time = defaultdict(list)
-
-
+    avg_completion_times = defaultdict(list)
+    total_tasks = len(all_task_sets)
 
     for i, tasks in enumerate(all_task_sets):
-        for task_type in task_type_list:
-            _, _, _, stats = rolloutWorker.generate_episode(evaluate=True, 
-                                                    tasks=tasks, task_type=task_type)  # 传入固定任务集
-            avg_wait_times[task_type].append(stats["shift_time_wait"]/ stats["total_allocated_num"])
+            _, _, _, stats = rolloutWorker.generate_episode(
+                evaluate=True,
+                tasks=tasks,
+                task_type=qmix
+            )
+
+            # 记录完成率
             completion_rates[task_type].append(stats["completion_rate"])
-            max_wait_times[task_type].append(stats["max_shift_time_wait"])
-            allocated_rates[task_type].append(stats["allocated_rate"])
-            avg_service_time[task_type].append(stats['shift_service_time']/stats['completed_tasks'])
-            avg_completed_time[task_type].append(stats['total_completed_time']/stats['completed_tasks'])
-            
-            logger.info(f"Run {task_type} {i + 1}: AVG wait time = {avg_wait_times[task_type][-1]:.2}, completion_rate = {stats['completion_rate']:.2%}")
-            logger.info(f"Run {task_type} {i + 1}: MAX wait time = {stats['max_shift_time_wait']:.2}, allocated_rate = {stats['allocated_rate']:.2%}")
-            logger.info(f"Run {task_type} {i + 1}: AVG service time = {avg_service_time[task_type][-1]:.2}, AVG completed time = {avg_completed_time[task_type][-1]:.2}")
+
+            # 记录平均完成时间（仅对已完成任务）
+            if stats["total_completed_num"] > 0:
+                avg_completion_time = stats["total_completion_time"] / stats["total_completed_num"]
+            else:
+                avg_completion_time = 0
+            avg_completion_times[task_type].append(avg_completion_time)
+
+            logger.info(
+                f"任务集 {i + 1}/{total_tasks} | 算法 {task_type} | "
+                f"完成率: {stats['completion_rate']:.2%} | "
+                f"平均完成时间: {avg_completion_time:.2f}秒"
+            )
+
+    # 计算整体平均值
+    results = {}
     for task_type in task_type_list:
-        average_wait_time = np.mean(avg_wait_times[task_type])
-        average_max_wait_times = np.mean(max_wait_times[task_type])
-        average_completion_rate = np.mean(completion_rates[task_type])
-        average_allocated_rate = np.mean(allocated_rates[task_type])
-        average_service_time = np.mean(avg_service_time[task_type])
-        average_completed_time = np.mean(avg_completed_time[task_type])
-        
-        logger.info(f"Average wait time over {len(all_task_sets)} runs with {task_type}: {average_wait_time:.2}")
-        logger.info(f"Average max wait time over {len(all_task_sets)} runs with {task_type}: {average_max_wait_times:.2}")
-        logger.info(f"Average completion rate over {len(all_task_sets)} runs with {task_type}: {average_completion_rate:.2%}")
-        logger.info(f"Average allocated rate over {len(all_task_sets)} runs with {task_type}: {average_allocated_rate:.2%}")
-        logger.info(f"Average service time over {len(all_task_sets)} runs with {task_type}: {average_service_time:.2}")
-        logger.info(f"Average completed time over {len(all_task_sets)} runs with {task_type}: {average_completed_time:.2}")
+        avg_completion_rate = np.mean(completion_rates[task_type])
+        avg_completion_time = np.mean(avg_completion_times[task_type])
 
+        results[task_type] = {
+            "completion_rate": avg_completion_rate,
+            "avg_completion_time": avg_completion_time
+        }
 
-    return average_wait_time, average_completion_rate
+        logger.info(f"算法 {task_type} 在 {total_tasks} 个任务集上的平均表现:")
+        logger.info(f"  平均任务完成率: {avg_completion_rate:.2%}")
+        logger.info(f"  平均任务完成时间: {avg_completion_time:.2f}秒")
+        logger.info("")
+
+    # 比较结果
+    logger.info("QMIX vs Greedy 比较结果:")
+    qmix_rate = results['qmix']['completion_rate']
+    greedy_rate = results['greedy']['completion_rate']
+    qmix_time = results['qmix']['avg_completion_time']
+    greedy_time = results['greedy']['avg_completion_time']
+
+    logger.info(f"QMIX 完成率比 Greedy {'高' if qmix_rate > greedy_rate else '低'}: "
+                f"{abs(qmix_rate - greedy_rate):.2%}")
+    logger.info(f"QMIX 完成时间比 Greedy {'少' if qmix_time < greedy_time else '多'}: "
+                f"{abs(qmix_time - greedy_time):.2f}秒")
+
+    return results
 
 
 if __name__ == "__main__":
-    task_file_path = os.environ['PYTHONPATH']+"task/task.pkl"  # 替换为任务文件路径
-    load_model_and_evaluate(task_file_path)
+    task_file_path = os.environ['PYTHONPATH'] + "\\MARL-QMIX\\MASA-QMIX-master\\task\\task.pkl"
+    results = load_model_and_evaluate(task_file_path)
+
+    # 打印最终比较结果
+    print("\n最终比较结果:")
+    print(f"QMIX 平均完成率: {results['qmix']['completion_rate']:.2%}")
+    print(f"Greedy 平均完成率: {results['greedy']['completion_rate']:.2%}")
+    print(f"QMIX 平均完成时间: {results['qmix']['avg_completion_time']:.2f}秒")
+    print(f"Greedy 平均完成时间: {results['greedy']['avg_completion_time']:.2f}秒")

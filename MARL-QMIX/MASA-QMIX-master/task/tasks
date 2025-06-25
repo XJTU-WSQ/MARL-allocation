@@ -1,155 +1,87 @@
 Task index  |Time        |Location                 |Task Type                     |Target                   |Duration    
 -------------------------------------------------------------------------------------------------------------------------
-0           |0           |Room10                   |Emotional Accompaniment       |Room10                   |150         
-1           |27          |Dining Room              |Rehabilitation Training       |Room3                    |150         
-2           |64          |Outdoor Area             |Rehabilitation Training       |Room5                    |150         
-3           |69          |Room11                   |Mobility Assistance Task      |Room4                    |15          
-4           |75          |Room7                    |Mobility Assistance Task      |Room6                    |15          
-5           |84          |Room7                    |Mobility Assistance Task      |Room4                    |15          
-6           |95          |Room12                   |Mobility Assistance Task      |Room7                    |15          
-7           |96          |Room10                   |Personal Item Delivery        |Room11                   |15          
-8           |134         |Room4                    |Mobility Assistance Task      |Outdoor Area             |15          
-9           |164         |Medical Room             |Mobility Assistance Task      |Room8                    |15          
-10          |222         |Room1                    |Emotional Accompaniment       |Room1                    |150         
-11          |224         |Room1                    |Mobility Assistance Task      |Room5                    |15          
-12          |240         |Room9                    |Personal Item Delivery        |Room10                   |15          
-13          |245         |Room3                    |Mobility Assistance Task      |Room1                    |15          
-14          |257         |Restroom                 |Mobility Assistance Task      |Room9                    |15          
-15          |263         |Room5                    |Personal Item Delivery        |Room4                    |15          
-16          |272         |Dining Room              |Rehabilitation Training       |Room6                    |150         
-17          |278         |Room2                    |Mobility Assistance Task      |Room4                    |15          
-18          |291         |Room3                    |Mobility Assistance Task      |Room12                   |15          
-19          |294         |Activity Room            |Mobility Assistance Task      |Dining Room              |15          
-20          |304         |Room3                    |Meal Delivery                 |Dining Room              |15          
-21          |309         |Room8                    |Mobility Assistance Task      |Room6                    |15          
-22          |363         |Room9                    |Mobility Assistance Task      |Activity Room            |15          
-23          |381         |Restroom                 |Mobility Assistance Task      |Room10                   |15          
-24          |392         |Room2                    |Emotional Accompaniment       |Room2                    |150         
-25          |409         |Room8                    |Personal Item Delivery        |Room6                    |15          
-26          |444         |Room5                    |Meal Delivery                 |Dining Room              |15          
-27          |524         |Medical Room             |Mobility Assistance Task      |Room2                    |15          
-28          |537         |Room4                    |Mobility Assistance Task      |Room5                    |15          
-29          |543         |Room6                    |Mobility Assistance Task      |Room5                    |15          
-30          |558         |Room6                    |Mobility Assistance Task      |Room1                    |15          
-31          |558         |Room9                    |Mobility Assistance Task      |Restroom                 |15          
-32          |559         |Room4                    |Mobility Assistance Task      |Activity Room            |15          
-33          |581         |Room5                    |Mobility Assistance Task      |Room8                    |15          
-34          |601         |Restroom                 |Mobility Assistance Task      |Medical Room             |15          
-35          |610         |Room2                    |Mobility Assistance Task      |Room3                    |15          
-36          |645         |Room1                    |Meal Delivery                 |Dining Room              |15          
-37          |662         |Room7                    |Mobility Assistance Task      |Room6                    |15          
-38          |666         |Room1                    |Personal Item Delivery        |Room6                    |15          
-39          |673         |Room12                   |Mobility Assistance Task      |Room2                    |15          
-40          |683         |Room3                    |Mobility Assistance Task      |Activity Room            |15          
-41          |718         |Dining Room              |Mobility Assistance Task      |Room10                   |15          
-42          |744         |Room11                   |Mobility Assistance Task      |Room5                    |15          
-43          |756         |Restroom                 |Mobility Assistance Task      |Activity Room            |15          
-44          |781         |Activity Room            |Meal Delivery                 |Dining Room              |15          
-45          |805         |Room4                    |Mobility Assistance Task      |Medical Room             |15          
-46          |813         |Room9                    |Mobility Assistance Task      |Room10                   |15          
-47          |837         |Outdoor Area             |Mobility Assistance Task      |Restroom                 |15          
-48          |861         |Room7                    |Mobility Assistance Task      |Room9                    |15          
-49          |869         |Dining Room              |Mobility Assistance Task      |Room6                    |15          
-50          |939         |Room7                    |Mobility Assistance Task      |Room2                    |15          
-51          |951         |Restroom                 |Mobility Assistance Task      |Room1                    |15          
-52          |970         |Room2                    |Mobility Assistance Task      |Room8                    |15          
-53          |983         |Medical Room             |Mobility Assistance Task      |Room1                    |15          
-54          |989         |Room6                    |Emotional Accompaniment       |Room6                    |150         
-55          |1005        |Room3                    |Meal Delivery                 |Dining Room              |15          
-56          |1043        |Room11                   |Mobility Assistance Task      |Room9                    |15          
-57          |1046        |Room7                    |Emotional Accompaniment       |Room7                    |150         
-58          |1046        |Room4                    |Meal Delivery                 |Dining Room              |15          
-59          |1047        |Activity Room            |Mobility Assistance Task      |Room1                    |15          
-60          |1048        |Room8                    |Personal Item Delivery        |Room12                   |15          
-61          |1054        |Room10                   |Mobility Assistance Task      |Room8                    |15          
-62          |1067        |Outdoor Area             |Emotional Accompaniment       |Outdoor Area             |150         
-63          |1081        |Room6                    |Mobility Assistance Task      |Room2                    |15          
-64          |1108        |Room8                    |Rehabilitation Training       |Restroom                 |150         
-65          |1179        |Room6                    |Rehabilitation Training       |Room3                    |150         
-66          |1191        |Outdoor Area             |Mobility Assistance Task      |Room1                    |15          
-67          |1230        |Room5                    |Mobility Assistance Task      |Restroom                 |15          
-68          |1231        |Outdoor Area             |Meal Delivery                 |Dining Room              |15          
-69          |1251        |Room4                    |Mobility Assistance Task      |Room7                    |15          
-70          |1280        |Room10                   |Mobility Assistance Task      |Room12                   |15          
-71          |1327        |Room3                    |Mobility Assistance Task      |Room11                   |15          
-72          |1334        |Room4                    |Mobility Assistance Task      |Medical Room             |15          
-73          |1351        |Room4                    |Mobility Assistance Task      |Restroom                 |15          
-74          |1355        |Room12                   |Rehabilitation Training       |Room4                    |150         
-75          |1393        |Outdoor Area             |Mobility Assistance Task      |Room2                    |15          
-76          |1406        |Medical Room             |Mobility Assistance Task      |Room4                    |15          
-77          |1458        |Room5                    |Meal Delivery                 |Dining Room              |15          
-78          |1487        |Room12                   |Mobility Assistance Task      |Room7                    |15          
-79          |1491        |Activity Room            |Mobility Assistance Task      |Outdoor Area             |15          
-80          |1520        |Activity Room            |Mobility Assistance Task      |Outdoor Area             |15          
-81          |1526        |Medical Room             |Emotional Accompaniment       |Medical Room             |150         
-82          |1542        |Room4                    |Emotional Accompaniment       |Room4                    |150         
-83          |1566        |Room2                    |Mobility Assistance Task      |Room3                    |15          
-84          |1589        |Outdoor Area             |Emotional Accompaniment       |Outdoor Area             |150         
-85          |1617        |Room2                    |Rehabilitation Training       |Activity Room            |150         
-86          |1620        |Activity Room            |Rehabilitation Training       |Room12                   |150         
-87          |1642        |Room3                    |Mobility Assistance Task      |Room12                   |15          
-88          |1642        |Room1                    |Emotional Accompaniment       |Room1                    |150         
-89          |1649        |Room11                   |Rehabilitation Training       |Activity Room            |150         
-90          |1650        |Room7                    |Mobility Assistance Task      |Dining Room              |15          
-91          |1678        |Room9                    |Mobility Assistance Task      |Room6                    |15          
-92          |1704        |Room8                    |Emotional Accompaniment       |Room8                    |150         
-93          |1844        |Activity Room            |Mobility Assistance Task      |Room5                    |15          
-94          |1856        |Room10                   |Emotional Accompaniment       |Room10                   |150         
-95          |1882        |Room3                    |Emotional Accompaniment       |Room3                    |150         
-96          |1882        |Room1                    |Personal Item Delivery        |Room10                   |15          
-97          |1949        |Room9                    |Personal Item Delivery        |Room5                    |15          
-98          |1960        |Outdoor Area             |Emotional Accompaniment       |Outdoor Area             |150         
-99          |1963        |Room1                    |Mobility Assistance Task      |Dining Room              |15          
-100         |1968        |Room5                    |Rehabilitation Training       |Room1                    |150         
-101         |1991        |Outdoor Area             |Mobility Assistance Task      |Room10                   |15          
-102         |1994        |Room10                   |Emotional Accompaniment       |Room10                   |150         
-103         |1994        |Room2                    |Mobility Assistance Task      |Medical Room             |15          
-104         |2011        |Room10                   |Personal Item Delivery        |Room9                    |15          
-105         |2051        |Room9                    |Rehabilitation Training       |Room5                    |150         
-106         |2057        |Restroom                 |Mobility Assistance Task      |Activity Room            |15          
-107         |2063        |Room8                    |Mobility Assistance Task      |Room7                    |15          
-108         |2071        |Room8                    |Rehabilitation Training       |Outdoor Area             |150         
-109         |2096        |Dining Room              |Rehabilitation Training       |Room12                   |150         
-110         |2113        |Room12                   |Mobility Assistance Task      |Room9                    |15          
-111         |2121        |Room7                    |Mobility Assistance Task      |Restroom                 |15          
-112         |2153        |Medical Room             |Mobility Assistance Task      |Activity Room            |15          
-113         |2160        |Room12                   |Emotional Accompaniment       |Room12                   |150         
-114         |2173        |Room11                   |Mobility Assistance Task      |Room8                    |15          
-115         |2204        |Room2                    |Emotional Accompaniment       |Room2                    |150         
-116         |2225        |Room6                    |Emotional Accompaniment       |Room6                    |150         
-117         |2240        |Medical Room             |Meal Delivery                 |Dining Room              |15          
-118         |2252        |Room9                    |Meal Delivery                 |Dining Room              |15          
-119         |2270        |Room6                    |Mobility Assistance Task      |Room11                   |15          
-120         |2298        |Room1                    |Mobility Assistance Task      |Medical Room             |15          
-121         |2316        |Room12                   |Mobility Assistance Task      |Activity Room            |15          
-122         |2333        |Restroom                 |Mobility Assistance Task      |Room6                    |15          
-123         |2355        |Dining Room              |Rehabilitation Training       |Outdoor Area             |150         
-124         |2403        |Dining Room              |Emotional Accompaniment       |Dining Room              |150         
-125         |2457        |Room8                    |Mobility Assistance Task      |Room11                   |15          
-126         |2462        |Room8                    |Mobility Assistance Task      |Room9                    |15          
-127         |2464        |Medical Room             |Mobility Assistance Task      |Room11                   |15          
-128         |2487        |Restroom                 |Mobility Assistance Task      |Outdoor Area             |15          
-129         |2497        |Room11                   |Emotional Accompaniment       |Room11                   |150         
-130         |2540        |Room11                   |Mobility Assistance Task      |Room3                    |15          
-131         |2544        |Restroom                 |Mobility Assistance Task      |Room1                    |15          
-132         |2561        |Room12                   |Meal Delivery                 |Dining Room              |15          
-133         |2564        |Room1                    |Mobility Assistance Task      |Room9                    |15          
-134         |2597        |Room5                    |Mobility Assistance Task      |Room2                    |15          
-135         |2603        |Room10                   |Personal Item Delivery        |Room2                    |15          
-136         |2605        |Activity Room            |Mobility Assistance Task      |Room4                    |15          
-137         |2639        |Room11                   |Meal Delivery                 |Dining Room              |15          
-138         |2646        |Dining Room              |Mobility Assistance Task      |Outdoor Area             |15          
-139         |2655        |Room2                    |Mobility Assistance Task      |Room8                    |15          
-140         |2672        |Room9                    |Rehabilitation Training       |Medical Room             |150         
-141         |2679        |Room3                    |Personal Item Delivery        |Room2                    |15          
-142         |2689        |Room11                   |Mobility Assistance Task      |Room8                    |15          
-143         |2697        |Room5                    |Mobility Assistance Task      |Room7                    |15          
-144         |2790        |Activity Room            |Personal Item Delivery        |Room11                   |15          
-145         |2796        |Room7                    |Mobility Assistance Task      |Room8                    |15          
-146         |2839        |Room10                   |Mobility Assistance Task      |Room3                    |15          
-147         |2840        |Dining Room              |Mobility Assistance Task      |Room10                   |15          
-148         |2849        |Room6                    |Emotional Accompaniment       |Room6                    |150         
-149         |2859        |Room6                    |Emotional Accompaniment       |Room6                    |150         
-150         |2864        |Room12                   |Mobility Assistance Task      |Room9                    |15          
-151         |2888        |Room5                    |Mobility Assistance Task      |Room11                   |15          
-152         |2919        |Medical Room             |Mobility Assistance Task      |Room10                   |15          
+0           |0           |Room6                    |Mobility Assistance Task      |Room4                    |125         
+1           |10          |Room2                    |Mobility Assistance Task      |Restroom                 |149         
+2           |19          |Room2                    |Personal Item Delivery        |Room9                    |134         
+3           |79          |Room9                    |Mobility Assistance Task      |Dining Room              |144         
+4           |102         |Activity Room            |Emotional Accompaniment       |Activity Room            |312         
+5           |139         |Room2                    |Emotional Accompaniment       |Room2                    |353         
+6           |170         |Room12                   |Meal Delivery                 |Dining Room              |133         
+7           |171         |Room7                    |Emotional Accompaniment       |Room7                    |315         
+8           |181         |Room7                    |Emotional Accompaniment       |Room7                    |330         
+9           |231         |Outdoor Area             |Mobility Assistance Task      |Activity Room            |137         
+10          |234         |Restroom                 |Rehabilitation Training       |Room8                    |585         
+11          |234         |Room9                    |Emotional Accompaniment       |Room9                    |309         
+12          |274         |Room10                   |Meal Delivery                 |Dining Room              |134         
+13          |327         |Dining Room              |Personal Item Delivery        |Room1                    |147         
+14          |383         |Room1                    |Emotional Accompaniment       |Room1                    |316         
+15          |430         |Outdoor Area             |Personal Item Delivery        |Room12                   |122         
+16          |550         |Room5                    |Mobility Assistance Task      |Room9                    |123         
+17          |659         |Room11                   |Meal Delivery                 |Dining Room              |146         
+18          |745         |Room4                    |Meal Delivery                 |Dining Room              |149         
+19          |790         |Restroom                 |Rehabilitation Training       |Dining Room              |563         
+20          |799         |Room9                    |Rehabilitation Training       |Room10                   |561         
+21          |816         |Room5                    |Emotional Accompaniment       |Room5                    |320         
+22          |833         |Medical Room             |Personal Item Delivery        |Restroom                 |121         
+23          |897         |Room12                   |Emotional Accompaniment       |Room12                   |307         
+24          |922         |Room6                    |Emotional Accompaniment       |Room6                    |333         
+25          |1016        |Room5                    |Meal Delivery                 |Dining Room              |147         
+26          |1097        |Room4                    |Mobility Assistance Task      |Restroom                 |135         
+27          |1099        |Activity Room            |Rehabilitation Training       |Room2                    |586         
+28          |1120        |Room3                    |Personal Item Delivery        |Outdoor Area             |147         
+29          |1214        |Room8                    |Mobility Assistance Task      |Room4                    |127         
+30          |1218        |Room11                   |Meal Delivery                 |Dining Room              |132         
+31          |1222        |Restroom                 |Mobility Assistance Task      |Room2                    |136         
+32          |1277        |Room11                   |Meal Delivery                 |Dining Room              |129         
+33          |1292        |Room12                   |Personal Item Delivery        |Room7                    |120         
+34          |1321        |Outdoor Area             |Personal Item Delivery        |Room10                   |142         
+35          |1376        |Medical Room             |Mobility Assistance Task      |Room11                   |147         
+36          |1401        |Restroom                 |Rehabilitation Training       |Room5                    |584         
+37          |1520        |Room6                    |Personal Item Delivery        |Room4                    |134         
+38          |1522        |Room3                    |Personal Item Delivery        |Room4                    |120         
+39          |1546        |Room8                    |Rehabilitation Training       |Medical Room             |596         
+40          |1561        |Activity Room            |Personal Item Delivery        |Room1                    |146         
+41          |1571        |Room7                    |Emotional Accompaniment       |Room7                    |317         
+42          |1599        |Room2                    |Mobility Assistance Task      |Room12                   |141         
+43          |1716        |Room6                    |Personal Item Delivery        |Restroom                 |148         
+44          |1765        |Activity Room            |Mobility Assistance Task      |Room1                    |139         
+45          |1810        |Medical Room             |Rehabilitation Training       |Restroom                 |547         
+46          |1839        |Room3                    |Meal Delivery                 |Dining Room              |135         
+47          |1850        |Room8                    |Emotional Accompaniment       |Room8                    |302         
+48          |1866        |Dining Room              |Meal Delivery                 |Dining Room              |137         
+49          |1872        |Restroom                 |Mobility Assistance Task      |Room4                    |136         
+50          |1877        |Dining Room              |Personal Item Delivery        |Room7                    |134         
+51          |1936        |Room6                    |Emotional Accompaniment       |Room6                    |342         
+52          |1937        |Room1                    |Mobility Assistance Task      |Room2                    |149         
+53          |1967        |Room8                    |Mobility Assistance Task      |Room7                    |148         
+54          |2006        |Medical Room             |Personal Item Delivery        |Room3                    |137         
+55          |2036        |Room5                    |Meal Delivery                 |Dining Room              |126         
+56          |2042        |Room7                    |Emotional Accompaniment       |Room7                    |347         
+57          |2075        |Activity Room            |Mobility Assistance Task      |Medical Room             |133         
+58          |2086        |Room4                    |Personal Item Delivery        |Medical Room             |121         
+59          |2105        |Room4                    |Mobility Assistance Task      |Outdoor Area             |124         
+60          |2185        |Room1                    |Rehabilitation Training       |Room2                    |569         
+61          |2282        |Medical Room             |Meal Delivery                 |Dining Room              |128         
+62          |2330        |Room5                    |Meal Delivery                 |Dining Room              |124         
+63          |2359        |Room4                    |Mobility Assistance Task      |Room1                    |127         
+64          |2383        |Room12                   |Rehabilitation Training       |Dining Room              |586         
+65          |2396        |Room10                   |Emotional Accompaniment       |Room10                   |336         
+66          |2488        |Room1                    |Mobility Assistance Task      |Room6                    |124         
+67          |2598        |Room11                   |Mobility Assistance Task      |Room3                    |142         
+68          |2644        |Dining Room              |Personal Item Delivery        |Outdoor Area             |145         
+69          |2809        |Room3                    |Emotional Accompaniment       |Room3                    |338         
+70          |2835        |Room3                    |Emotional Accompaniment       |Room3                    |307         
+71          |2851        |Outdoor Area             |Mobility Assistance Task      |Medical Room             |128         
+72          |2902        |Room11                   |Personal Item Delivery        |Room1                    |131         
+73          |2988        |Room9                    |Personal Item Delivery        |Room7                    |128         
+74          |3018        |Dining Room              |Rehabilitation Training       |Restroom                 |592         
+75          |3057        |Room9                    |Emotional Accompaniment       |Room9                    |304         
+76          |3059        |Room10                   |Personal Item Delivery        |Dining Room              |147         
+77          |3082        |Room10                   |Personal Item Delivery        |Room9                    |136         
+78          |3098        |Room1                    |Meal Delivery                 |Dining Room              |122         
+79          |3170        |Room10                   |Personal Item Delivery        |Medical Room             |148         
+80          |3223        |Room8                    |Personal Item Delivery        |Room10                   |141         
+81          |3324        |Room7                    |Emotional Accompaniment       |Room7                    |330         
+82          |3390        |Outdoor Area             |Emotional Accompaniment       |Outdoor Area             |328         
+83          |3415        |Room12                   |Rehabilitation Training       |Room8                    |552         
+84          |3511        |Room2                    |Mobility Assistance Task      |Room5                    |141         

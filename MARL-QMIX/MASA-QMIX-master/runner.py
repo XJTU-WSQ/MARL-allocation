@@ -30,11 +30,8 @@ group_mapping = {
     'avg_service_time': '2_Time',
     'max_wait_time': '2_Time',
     'avg_service_coff': '4_Training',
-    'avg_greedy_completion_time': '3_Baselines',
-    'greedy_completion_rate': '3_Baselines',
     'epsilon_value': '4_Training',
     'total_allocated_num': '1_Completion',
-    'total_greedy_completed_num': '3_Baselines'
 }
 
 class Runner:
@@ -79,7 +76,7 @@ class Runner:
                     epoch_info_dict['epoch_rewards'].append(episode_reward)
                     for key in [
                         'total_completed_num', 'completion_rate', 'total_allocated_num', 'allocated_rate',
-                        'avg_service_coff', 'epsilon_value', 'total_greedy_completed_num'
+                        'avg_service_coff', 'epsilon_value'
                     ]:
                         if key in episode_stats:
                             epoch_info_dict[key].append(episode_stats[key])
@@ -97,15 +94,6 @@ class Runner:
                     # 记录最长等待时间
                     epoch_info_dict['max_wait_time'].append(episode_stats.get('max_wait_time', 0))
 
-                    # 计算对比算法统计量
-                    if episode_stats['total_greedy_completed_num'] > 0:
-                        epoch_info_dict['avg_greedy_completion_time'].append(episode_stats["total_greedy_completion_time"] / episode_stats["total_greedy_completed_num"])
-                    else:
-                        epoch_info_dict['avg_greedy_completion_time'].append(0)
-
-                    # 计算完成率
-                    total_tasks = episode_stats.get('total_tasks_num', 1)
-                    epoch_info_dict['greedy_completion_rate'].append(episode_stats['total_greedy_completed_num'] / total_tasks)
                     # 保存 episode 到缓冲区
                     if _ == 0:
                         episode_batch = episode
@@ -127,8 +115,7 @@ class Runner:
             for stat_type in [
                 'epoch_rewards', 'total_completed_num', 'completion_rate', 'total_allocated_num', 'allocated_rate',
                 'avg_completion_time', 'avg_time_wait', 'avg_time_on_road', 'avg_service_time', 'max_wait_time',
-                'avg_service_coff', 'avg_greedy_completion_time',
-                'total_greedy_completed_num', 'greedy_completion_rate', 'epsilon_value'
+                'avg_service_coff', 'epsilon_value'
             ]:
                 if stat_type in epoch_info_dict:
                     avg_value = np.mean(epoch_info_dict[stat_type])
@@ -143,17 +130,8 @@ class Runner:
                         self.writer.add_scalar(f"Train/{group}/MAX {stat_type}", max_value, epoch)
                         self.writer.add_scalar(f"Train/{group}/MIN {stat_type}", min_value, epoch)
 
-            # 记录对比算法的性能
             avg_completion_time = np.mean(epoch_info_dict['avg_completion_time'])
-            avg_greedy_completion_time = np.mean(epoch_info_dict['avg_greedy_completion_time'])
-
             qmix_completion_rate = np.mean(epoch_info_dict['completion_rate'])
-            greedy_completion_rate = np.mean(epoch_info_dict['greedy_completion_rate'])
-
-            logger.info(f'Compare average_completion_time: QMIX={avg_completion_time:.2f} '
-                        f'greedy={avg_greedy_completion_time:.2f}')
-            logger.info(f'Compare completion_rate: QMIX={qmix_completion_rate * 100:.2f}% '
-                        f'greedy={greedy_completion_rate * 100:.2f}%')
 
             # 保存 episode 到缓冲区
             self.buffer.store_episode(episode_batch)
@@ -192,7 +170,6 @@ class Runner:
                 for key in [
                     'total_completed_num', 'completion_rate', 'total_allocated_num', 'allocated_rate',
                     'avg_service_coff', 'epsilon_value',
-                    'total_greedy_completed_num'
                 ]:
                     if key in episode_stats:
                         epoch_info_dict[key].append(episode_stats[key])
@@ -218,26 +195,11 @@ class Runner:
                 # 记录最长等待时间
                 epoch_info_dict['max_wait_time'].append(episode_stats.get('max_wait_time', 0))
 
-                # 计算对比算法统计量
-                if episode_stats['total_greedy_completed_num'] > 0:
-                    epoch_info_dict['avg_greedy_completion_time'].append(
-                        episode_stats["total_greedy_completion_time"] / episode_stats["total_greedy_completed_num"]
-                    )
-                else:
-                    epoch_info_dict['avg_greedy_completion_time'].append(0)
-
-                # 计算完成率
-                total_tasks = episode_stats.get('total_tasks_num', 1)
-                epoch_info_dict['greedy_completion_rate'].append(
-                    episode_stats['total_greedy_completed_num'] / total_tasks
-                )
-
         # 计算并记录平均统计量
         for stat_type in [
             'epoch_rewards', 'total_completed_num', 'completion_rate', 'total_allocated_num', 'allocated_rate',
             'avg_completion_time', 'avg_time_wait', 'avg_time_on_road', 'avg_service_time', 'max_wait_time',
-            'avg_service_coff', 'avg_greedy_completion_time',
-            'total_greedy_completed_num', 'greedy_completion_rate', 'epsilon_value'
+            'avg_service_coff', 'epsilon_value'
         ]:
             if stat_type in epoch_info_dict:
                 avg_value = np.mean(epoch_info_dict[stat_type])
@@ -256,15 +218,6 @@ class Runner:
         avg_reward = np.mean(epoch_info_dict['epoch_rewards'])
         avg_completion_time = np.mean(epoch_info_dict['avg_completion_time'])
         avg_completion_rate = np.mean(epoch_info_dict['completion_rate'])
-
-        # 记录对比算法性能
-        avg_greedy_completion_time = np.mean(epoch_info_dict['avg_greedy_completion_time'])
-        greedy_completion_rate = np.mean(epoch_info_dict['greedy_completion_rate'])
-
-        logger.info(f'Test Compare average_completion_time: QMIX={avg_completion_time:.2f} '
-                    f'greedy={avg_greedy_completion_time:.2f}')
-        logger.info(f'Test Compare completion_rate: QMIX={avg_completion_rate * 100:.2f}% '
-                    f'greedy={greedy_completion_rate * 100:.2f}%')
 
         # 增加测试计数器
         self.test_episode_count += 1

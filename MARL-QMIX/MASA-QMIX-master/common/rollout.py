@@ -26,10 +26,8 @@ class RolloutWorker:
         print('Init RolloutWorker')
 
     def generate_episode(self, episode_num=None, evaluate=False, 
-                         tasks=None, task_type='qmix', evalue_epsilon=0):
+                         tasks=None, evalue_epsilon=0):
         # 如果提供了固定任务集，则使用，否则生成新任务
-        global total_greedy_completion_time, total_greedy_completed_num
-        global fixed_initial_pos
         if tasks is not None:
             self.env.tasks_array = tasks
         elif evaluate:
@@ -42,14 +40,6 @@ class RolloutWorker:
             self.env.close()
         o, u, r, s, avail_u, u_onehot, terminate, padded = [], [], [], [], [], [], [], []
         self.env.reset()
-
-        if task_type == 'qmix':
-            # 保存初始位置到实例变量
-            fixed_initial_pos = copy.deepcopy(self.env.robots.robot_pos)
-        # === 关键修改：其他算法使用保存的位置 ===
-        # 对于其他算法，且任务集相同（tasks不为None），使用保存的位置
-        if task_type != 'qmix' and tasks is not None and hasattr(self, 'fixed_initial_pos'):
-            self.env.robots.robot_pos = copy.deepcopy(fixed_initial_pos)
 
         terminated = False
         step = 0
@@ -90,11 +80,9 @@ class RolloutWorker:
                 action_onehot = np.zeros(self.args.n_actions)
                 action_onehot[action] = 1
                 actions_onehot.append(action_onehot)
-            if task_type == 'qmix':
-                reward, terminated, info = self.env.step(actions)
-            elif task_type == 'greedy':
-                greedy_actions = self.env.assign_tasks_baseline()
-                reward, terminated, info = self.env.step(greedy_actions)
+
+            reward, terminated, info = self.env.step(actions)
+
             # 记录奖励组成
             all_reward_components.append(info["reward_components"])
             stats_dict[step] = info
@@ -126,7 +114,7 @@ class RolloutWorker:
             episode_reward += reward
             step += 1
 
-            if self.args.epsilon_anneal_scale == 'step' and evaluate != True and task_type == 'qmix':
+            if self.args.epsilon_anneal_scale == 'step' and evaluate != True:
                 # anneal_epsilon = (self.epsilon - self.min_epsilon) / self.anneal_steps
                 # epsilon = epsilon - anneal_epsilon if epsilon > self.min_epsilon else epsilon
                 self.current_step += 1
@@ -217,13 +205,6 @@ class RolloutWorker:
                     json.dump(episode_data, f, indent=4)
                 print(f"Episode {episode_num} data saved to episode_{episode_num}.json")
 
-        if task_type == 'qmix':
-            _, _, _, greedy_stats = self.generate_episode(episode_num=episode_num, evaluate=evaluate,
-                            tasks=tasks, task_type='greedy', evalue_epsilon=evalue_epsilon)
-
-            total_greedy_completion_time = greedy_stats['total_completion_time']
-            total_greedy_completed_num = greedy_stats["total_completed_num"]
-
         # 构建统计量
         stats = {
             # 任务完成相关
@@ -246,10 +227,6 @@ class RolloutWorker:
             # 奖励和学习相关
             "episode_reward": episode_reward,
             "epsilon_value": epsilon,
-
-            # 对比算法统计
-            "total_greedy_completion_time": total_greedy_completion_time,
-            "total_greedy_completed_num": total_greedy_completed_num,
 
             "stats_dict": stats_dict,
             "reward_components": all_reward_components,  # 所有步骤的奖励组成

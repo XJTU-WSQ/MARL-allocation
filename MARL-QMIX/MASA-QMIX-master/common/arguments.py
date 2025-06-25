@@ -18,7 +18,7 @@ def get_common_args():
     parser.add_argument('--evaluate_epoch', type=int, default=30, help='number of the epoch to evaluate the agent')
     parser.add_argument('--learn', type=bool, default=True, help='whether to train the model')
     parser.add_argument('--cuda', type=bool, default=True, help='whether to use the GPU')
-    parser.add_argument('--map', type=str, default="Schedule250616", help='map name') # 仅用于模型存储路径
+    parser.add_argument('--map', type=str, default="Schedule250626", help='map name') # 仅用于模型存储路径
     parser.add_argument('--log_step_data', type=bool, default=False, help='Log step data for debugging')
     parser.add_argument("--use_tensorboard", type=bool, default=True, help="Enable TensorBoard logging")
     parser.add_argument("--run_name", type=str, default="default_run", help="Name of the current run") # 仅用于tensorboard任务标识 
@@ -53,13 +53,9 @@ def get_mixer_args(args):
     args.target_update_cycle = 200
 
     # 经验回放
-    args.batch_size = 64  # 保持不变，常见取值
+    args.batch_size = 32  # 保持不变，常见取值
     args.buffer_size = int(1e4)  # 原为 5e3，增大后可存更多样本，提升稳定性
 
     # 梯度裁剪
     args.grad_norm_clip = 10  # 保持不变，防止梯度爆炸
-
-    # 添加权重参数
-    args.completion_weight = 0.7  # 初始完成率权重
-    args.time_weight = 0.3        # 初始时间效率权重
     return args
