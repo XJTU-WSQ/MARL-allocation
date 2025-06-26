@@ -6,6 +6,8 @@ robot类属性：
 import numpy as np
 from utils.util import *
 from utils.sites import Sites
+from collections import defaultdict, deque
+from utils.util import count_path_on_road
 
 
 def cal_pos(start_pos, target_pos, speed, time_span):
@@ -40,30 +42,36 @@ class Robots:
         # 机器人名称
         self.robot_info = ["智能轮椅机器人", "开放式递送机器人", "箱式递送机器人", "通用型机器人", "辅助行走机器人"]
         # 机器人速度
-        self.speed = [i/2 for i in [1.5, 1.0, 1.0, 0.5, 1.0]]
+        self.speed = [1.5, 1.0, 1.0, 0.8, 1.0]
         # 机器人总数
-        self.num_robots = 10
+        self.num_robots = 15
         # 机器人的类型
-        self.robots_type_id = [0, 0, 0, 0, 1, 2, 3, 3, 4, 4]
+        self.robots_type_id = [0, 0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 4]
         # 机器人的技能信息
         self.robots_skills = np.zeros([self.num_robots, self.num_skills])
         # robot_sites_pos 分别对应①-⑤类型机器人的停靠点
         self.robot_sites_pos = np.array([
-            [8, 30], [52, 30], [8, 10], [52, 10],  # 智能轮椅机器人
-            [15, 20],                              # 开放式递送机器人
-            [45, 20],                              # 私人递送机器人
-            [25, 30], [35, 10],                    # 通用型机器人
-            [25, 10], [35, 30]                     # 辅助行走机器人
+            [8, 30], [52, 30], [8, 10],            # 智能轮椅机器人
+            [52, 10], [15, 20], [15, 20],         # 开放式递送机器人
+            [45, 20], [45, 20], [45, 20],           # 私人递送机器人
+            [25, 30], [35, 20], [35, 10],          # 通用型机器人
+            [25, 10], [35, 30], [35, 30]           # 辅助行走机器人
         ])
         # [time_on_road_1, service_time, time_on_road_2]
         self.robots_time = np.zeros([self.num_robots, 3])
         # 机器人位置初始化
         self.robot_pos = self.robot_sites_pos
-        # 机器人执行任务的信息 robots_tasks_info[i] = [task_index, requests_time, site_id, task_id, destination_id, service_time]
+        # 机器人执行任务的信息 robots_tasks_info[i] = [task_index, requests_time, site_id, task_id, destination_id, task_complete_time]
         self.robots_tasks_info = np.zeros([self.num_robots, 6], dtype=int)
         # 获取每个机器人所掌握的技能集
         for i in range(self.num_robots):
             self.robots_skills[i] = self.get_skills(i)
+
+        self.skill_buffers = defaultdict(lambda: defaultdict(lambda: {
+            'count': 0,  # 最多存储100条记录，自动淘汰旧数据
+            'mean': 0.0,
+            'M2': 0
+        }))
 
     # 机器人能力：①辅助老人移动能力 ② 送餐能力 ③递送能力 ④ 陪伴能力 ⑤康复训练能力
     def get_skills(self, agent_id):
@@ -73,25 +81,60 @@ class Robots:
         if robot_type_id == 1:
             return [0, 1, 1, 1, 0]   # 类型 1：开放式递送机器人
         if robot_type_id == 2:
-            return [0, 1, 1, 1, 0]   # 类型 2：箱式递送机器人
+            return [1, 1, 1, 1, 1]   # 类型 2：通用箱式机器人
         if robot_type_id == 3:
-            return [1, 1, 1, 1, 1]   # 类型 3：通用型机器人
+            return [1, 1, 1, 1, 1]   # 类型 3：通用人型机器人
         if robot_type_id == 4:
-            return [1, 0, 0, 1, 1]   # 类型 4：辅助行走机器人
+            return [1, 1, 1, 1, 1]   # 类型 4：辅助行走机器人
 
     # 机器人能力系数：①辅助老人移动能力 ② 送餐能力 ③递送能力 ④ 陪伴能力 ⑤康复训练能力
     def get_skills_coff(self, agent_id):
         robot_type_id = self.robots_type_id[agent_id]
         if robot_type_id == 0:
-            return [1.2, 0.5, 0.5, 0.8, 0]   # 类型 0：智能轮椅机器人
+            return [1.2, 0.3, 0.3, 0.6, 0]   # 类型 0：智能轮椅机器人
         if robot_type_id == 1:
-            return [0, 1.2, 0.8, 0.8, 0]   # 类型 1：开放式递送机器人
+            return [0, 1.2, 0.6, 0.6, 0]   # 类型 1：开放式递送机器人
         if robot_type_id == 2:
-            return [0, 0.8, 1.2, 0.8, 0]   # 类型 2：箱式递送机器人
+            return [0.1, 0.6, 1.2, 0.6, 0.1]   # 类型 2：通用箱式机器人
         if robot_type_id == 3:
-            return [0.1, 0.5, 0.5, 1.2, 0.8]   # 类型 3：通用型机器人
+            return [0.3, 0.1, 0.1, 1.2, 0.3]   # 类型 3：通用人型机器人
         if robot_type_id == 4:
-            return [0.5, 0, 0, 1, 1.2]   # 类型 4：辅助行走机器人
+            return [0.6, 0.1, 0.1, 1, 1.2]   # 类型 4：辅助行走机器人
+
+    def get_buff_skills_coff_mean(self, agent_id, task_id):
+        """获取技能系数（经验均值）"""
+        return self.skill_buffers[agent_id][task_id]['mean']
+
+    def get_buff_skills_coff_std(self, agent_id, task_id):
+        """获取技能系数（经验标准差）"""
+        buffer_info = self.skill_buffers[agent_id][task_id]
+        count = buffer_info.get('count', 0)
+        
+        if count < 2:
+            return 0.0  # 样本数小于2时标准差为0
+        
+        # 计算样本标准差 (使用n-1作为分母)
+        return math.sqrt(buffer_info.get('M2', 0.0) / (count - 1))
+
+    def save_buff_skills(self, agent_id, task_id, task_times):
+        buffer_info = self.skill_buffers[agent_id][task_id]
+        # 获取当前统计信息
+        count = buffer_info['count']
+        mean = buffer_info['mean']
+        M2 = buffer_info['M2']
+
+        count += 1  # 更新计数
+        delta = task_times/30 - mean  # 计算增量
+        mean += delta / count  # 更新均值
+        
+        # 更新二阶矩 (用于计算方差和标准差)
+        delta2 = task_times/30 - mean
+        M2 += delta * delta2
+        
+        # 保存更新后的统计量
+        buffer_info['count'] = count
+        buffer_info['mean'] = mean
+        buffer_info['M2'] = M2
 
     # 执行任务（暂时没有考虑任务类型为1时，紧急情况的处理）
     # 输入的范围：task_id:0-6, robot_id:0-14, site_id:0-25, destination_id:0-25
@@ -99,7 +142,10 @@ class Robots:
     def execute_task(self, robot_id, task):
         # 机器人的任务信息：
         [task_index, requests_time, site_id, task_id, destination_id, service_time] = task
-        self.robots_tasks_info[robot_id] = [task_index, requests_time, site_id, task_id, destination_id, service_time]
+        # 根据能力系数计算实际服务时长
+        service_coff = self.get_skills_coff(robot_id)[task_id - 1]
+        real_service_time = np.ceil(service_time/service_coff)
+
         # 机器人的类型和速度
         robot_type_id = self.robots_type_id[robot_id]
         speed = self.speed[robot_type_id]
@@ -113,11 +159,13 @@ class Robots:
             time_on_road_1 = count_path_on_road(self.robot_pos[robot_id], self.sites.sites_pos[site_id], speed)
             time_on_road_2 = count_path_on_road(self.sites.sites_pos[site_id], self.sites.sites_pos[destination_id],
                                                 speed)
-        # 保留一个执行任务时，在路上的时间，在这个过程中如果突发紧急情况，可以对机器人任务进行重置，优先执行紧急任务。
-        service_coff = self.get_skills_coff(robot_id)[task_id-1]
-        self.robots_time[robot_id] = [time_on_road_1, np.ceil(service_time/service_coff), time_on_road_2]
-        total_time = time_on_road_1 + np.ceil(service_time/service_coff) + time_on_road_2
-        return time_on_road_1, total_time
+
+        self.save_buff_skills(robot_id, task_id, real_service_time)
+        self.robots_time[robot_id] = [time_on_road_1, real_service_time, time_on_road_2]
+
+        task_complete_time = time_on_road_1 + real_service_time + time_on_road_2
+        self.robots_tasks_info[robot_id] = [task_index, requests_time, site_id, task_id, destination_id, task_complete_time]
+        return time_on_road_1, real_service_time, time_on_road_2, service_coff  # 去程耗时，服务耗时，返程耗时
 
     # 更新机器人位置信息
     # 输入：上一个step的多智能体的联合动作，选择去哪个任务请求点，同时要有上一个step的任务列表和任务目标点列表。上一个step花费的时间。

@@ -53,13 +53,13 @@ class Agents:
             action = torch.argmax(q_value).cpu()
         return action
 
-    def choose_actions_batch(self, obs, avail_actions, epsilon, constraint_type=4):
+    def choose_actions_batch(self, obs, avail_actions, epsilon, constraint_type=3):
         """
         为所有代理选择动作
         constraint_type: 1 表示agent优先策略，每个agent根据q值最大进行选择
         constraint_type: 2 表示匈牙利算法，通过q值构建成本矩阵，根据全局q值最大进行选择
         constraint_type: 3 表示task优先策略，每个task根据q值最大进行选择
-        constraint_type: 4 表示task优先策略，每个task根据q值最大进行选择，但探索策略更保守
+        constraint_type: 4 表示task优先策略，每个task根据q值最大进行选择，但探索策略更保守(次优解容易影响收敛)
         补充：类型1中每个任务可以分配给多个agent，类型2与3中每个任务只会分配给单个agent
         """
         inputs = obs.copy()
@@ -145,7 +145,7 @@ class Agents:
                                 agent_id = torch.argmax(q_values_clone[:, i]).cpu().item()
                                 if q_values_clone[:, i].cpu().max() == -float("inf"):
                                     agent_id = np.nan
-                            elif rand_choice < 0.5: # 25% 的概率选择更次优的结果
+                            elif rand_choice < 0.4: # 15% 的概率选择更次优的结果
                                 q_values_clone[:, i] = q_values_clone[:, i].cpu()
                                 q_values_clone[:, i][q_values_clone[:-1, i].argmax()] = -float("inf")  # 排除最优
                                 second_best = torch.argmax(q_values_clone[:-1, i]).cpu().item()
@@ -153,7 +153,7 @@ class Agents:
                                 agent_id = torch.argmax(q_values_clone[:, i]).cpu().item()
                                 if q_values_clone[:, i].cpu().max() == -float("inf"):
                                     agent_id = np.nan
-                            else: # 50% 的概率保留原有的规则进行随机选择
+                            else: # 60% 的概率保留原有的规则进行随机选择
                                 agent_id = random_choice_with_mask(avail_actions[:, i])
                                 q_values_clone[agent_id, :] = -float("inf")
                         else:
