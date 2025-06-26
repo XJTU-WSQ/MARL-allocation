@@ -2,6 +2,7 @@ import copy
 import json
 import math
 import random
+import hashlib
 import numpy as np
 from task import task_generator
 from loguru import logger
@@ -30,7 +31,6 @@ class RolloutWorker:
                          tasks=None, task_type='qmix', evalue_epsilon=0):
         # 如果提供了固定任务集，则使用，否则生成新任务
         global total_greedy_completion_time, total_greedy_completed_num
-        global fixed_initial_pos
         if tasks is not None:
             self.env.tasks_array = tasks
         elif evaluate:
@@ -42,15 +42,9 @@ class RolloutWorker:
         if self.args.replay_dir != '' and evaluate and episode_num == 0:  # prepare for save replay of evaluation
             self.env.close()
         o, u, r, s, avail_u, u_onehot, terminate, padded = [], [], [], [], [], [], [], []
-        self.env.reset()
+        seed = int(hashlib.sha256(str(tasks).encode()).hexdigest(), 16) % (2**32) # 根据tasks的哈希值构建随机种子
+        self.env.reset(random_seed = seed)
 
-        if task_type == 'qmix':
-            # 保存初始位置到实例变量
-            fixed_initial_pos = copy.deepcopy(self.env.robots.robot_pos)
-        # === 关键修改：其他算法使用保存的位置 ===
-        # 对于其他算法，且任务集相同（tasks不为None），使用保存的位置
-        if task_type != 'qmix' and tasks is not None and hasattr(self, 'fixed_initial_pos'):
-            self.env.robots.robot_pos = copy.deepcopy(fixed_initial_pos)
         terminated = False
         step = 0
         episode_reward = 0

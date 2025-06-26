@@ -35,7 +35,7 @@ class ScheduleEnv(gym.Env, ABC):
         self.episode_final_reward = 0  # 新增：记录整个episode的最终奖励
         self.reset()  # 初始化环境
 
-    def reset(self):
+    def reset(self, random_seed=42):
         """
         环境重置，初始化所有参数。
         """
@@ -56,8 +56,9 @@ class ScheduleEnv(gym.Env, ABC):
         self.task_window = [[0 for _ in range(6)] for _ in range(self.task_window_size)]
 
         # 机器人信息初始化
-        self.robots.robot_pos = self.robots.robot_sites_pos
-        random.shuffle(self.robots.robot_pos)
+        self.robots.robot_pos = self.robots.robot_sites_pos.copy()
+        np.random.seed(random_seed) # 设定随机种子，确保同一批次的任务，其机器人的初始随机位置一致
+        np.random.shuffle(self.robots.robot_pos)
         self.robots_state = [0 for _ in range(self.robots.num_robots)] # 机器人状态信息 : 1占用，0空闲
         self.robots_work_times = [0 for _ in range(self.robots.num_robots)]
         self.robots.robots_tasks_info = np.zeros([self.robots.num_robots, 6], dtype=int)
