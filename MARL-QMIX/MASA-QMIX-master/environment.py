@@ -322,7 +322,7 @@ class ScheduleEnv(gym.Env, ABC):
                 # Randomly choose a valid action (including "do nothing")
                 valid_actions = [action for action, available in enumerate(available_actions) if available == 1]
                 actions[robot_id] = np.random.choice(valid_actions)
-        elif baseline_type == 'greedy' or baseline_type == 'greedy_priority':
+        elif baseline_type in ['greedy', 'greedy_priority', 'greedy_taskcoff']:
             robot_positions = self.robots.robot_pos
             task_window = self.task_window
 
@@ -345,6 +345,9 @@ class ScheduleEnv(gym.Env, ABC):
                     if baseline_type == 'greedy_priority': # 增加baseline：考虑优先级的贪婪算法
                         task_priority = self.tasks.task_priority[task[3]]
                         distance = distance/task_priority
+                    if baseline_type == 'greedy_taskcoff': # 增加baseline：考虑任务能力系数的贪婪算法
+                        service_coff = self.robots.get_task_service_coff(robot_id, task[3])
+                        distance = distance/service_coff
                     # Update the closest task
                     if distance < min_distance:
                         closest_task = task_index
@@ -413,7 +416,7 @@ class ScheduleEnv(gym.Env, ABC):
                     robot_id = robots[0]
                     task_type = task[3]
                     task_priority = self.tasks.task_priority[task_type]
-                    service_coff = self.robots.get_skills_coff(robot_id)[task_type-1] if task_type>0 else self.robots.get_skills_coff(robot_id)[3]
+                    service_coff = self.robots.get_task_service_coff(robot_id, task_type)
 
                     valid_assignments += 1
                     total_priority += task_priority

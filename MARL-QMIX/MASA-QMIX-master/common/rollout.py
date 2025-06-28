@@ -87,7 +87,7 @@ class RolloutWorker:
                 actions_onehot.append(action_onehot)
             if task_type == 'qmix':
                 reward, terminated, info = self.env.step(actions, task_priority_reward = self.task_priority_reward)
-            elif task_type in ['random','greedy','greedy_priority','genetic']:
+            elif task_type in ['random','greedy','greedy_priority','greedy_taskcoff','genetic']:
                 greedy_actions = self.env.assign_tasks_baseline(baseline_type=task_type)
                 reward, terminated, info = self.env.step(greedy_actions, task_priority_reward = self.task_priority_reward)
             else:
