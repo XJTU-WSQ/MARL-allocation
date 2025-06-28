@@ -87,12 +87,11 @@ class RolloutWorker:
                 actions_onehot.append(action_onehot)
             if task_type == 'qmix':
                 reward, terminated, info = self.env.step(actions, task_priority_reward = self.task_priority_reward)
-            elif task_type == 'greedy':
-                greedy_actions = self.env.assign_tasks_baseline(baseline_type='greedy')
+            elif task_type in ['random','greedy','greedy_priority','genetic']:
+                greedy_actions = self.env.assign_tasks_baseline(baseline_type=task_type)
                 reward, terminated, info = self.env.step(greedy_actions, task_priority_reward = self.task_priority_reward)
-            elif task_type == 'random':
-                random_actions = self.env.assign_tasks_baseline(baseline_type='random')
-                reward, terminated, info = self.env.step(random_actions, task_priority_reward = self.task_priority_reward)
+            else:
+                logger.error(f'wrong args in generate_episode with task_type={task_type}')
             # 记录奖励组成
             all_reward_components.append(info["reward_components"])
             stats_dict[step] = info

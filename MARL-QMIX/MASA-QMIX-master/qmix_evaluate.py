@@ -15,7 +15,7 @@ def load_model_and_evaluate(file_path):
     # 加载固定任务集
     with open(file_path, "rb") as f:
         all_task_sets = pickle.load(f)
-    task_type_list = ['qmix','random','greedy']
+    task_type_list = ['qmix','random','greedy','greedy_priority','genetic']
     # 设置参数
     args = get_common_args()
     args = get_mixer_args(args)

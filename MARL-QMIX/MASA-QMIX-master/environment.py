@@ -322,7 +322,7 @@ class ScheduleEnv(gym.Env, ABC):
                 # Randomly choose a valid action (including "do nothing")
                 valid_actions = [action for action, available in enumerate(available_actions) if available == 1]
                 actions[robot_id] = np.random.choice(valid_actions)
-        elif baseline_type == 'greedy':
+        elif baseline_type == 'greedy' or baseline_type == 'greedy_priority':
             robot_positions = self.robots.robot_pos
             task_window = self.task_window
 
@@ -339,16 +339,154 @@ class ScheduleEnv(gym.Env, ABC):
                 for task_index, task in enumerate(task_window):
                     if available_actions[task_index] == 0:  # Skip if the task is not executable
                         continue
-
+                    
                     task_pos = self.sites.sites_pos[task[2]]
                     distance = np.linalg.norm(np.array(robot_pos) - np.array(task_pos))
-
+                    if baseline_type == 'greedy_priority': # 增加baseline：考虑优先级的贪婪算法
+                        task_priority = self.tasks.task_priority[task[3]]
+                        distance = distance/task_priority
                     # Update the closest task
                     if distance < min_distance:
                         closest_task = task_index
                         min_distance = distance
                 # If no suitable task is found, choose the "do nothing" action
                 actions[robot_id] = closest_task if closest_task is not None else len(task_window)
+        
+        elif baseline_type == 'genetic': # 新增遗传算法实现
+            # 1. 获取空闲机器人
+            free_robots = [r for r in robot_ids_list if self.robots_state[r] == 0]
+            num_free_robots = len(free_robots)
+            
+            if num_free_robots == 0:
+                return [self.task_window_size] * self.robots.num_robots
+            
+            # 2. 遗传算法参数 种群大小：30  迭代次数：50  交叉率：80%  变异率：10%
+            POPULATION_SIZE = 30
+            GENERATIONS = 50
+            MUTATION_RATE = 0.1
+            CROSSOVER_RATE = 0.8
+            
+            # 3. 初始化种群
+            def create_individual():
+                individual = []
+                for robot_id in free_robots:
+                    avail_actions = self.get_avail_agent_actions(robot_id)
+                    valid_actions = [a for a, avail in enumerate(avail_actions) if avail == 1]
+                    individual.append(random.choice(valid_actions))
+                return individual
+            
+            population = [create_individual() for _ in range(POPULATION_SIZE)]
+            
+            # 4. 适应度函数
+            def fitness(individual):
+                # 模拟分配结果
+                task_assignments = {}
+                for idx, action in enumerate(individual):
+                    robot_id = free_robots[idx]
+                    if action < self.task_window_size:  # 有效任务分配
+                        task = self.task_window[action]
+                        task_id = task[0]
+                        
+                        # 记录任务分配
+                        if task_id not in task_assignments:
+                            task_assignments[task_id] = []
+                        task_assignments[task_id].append(robot_id)
+                
+                # 计算有效分配数量
+                valid_assignments = 0
+                total_priority = 0
+                total_efficiency = 0
+                total_distance = 0
+                
+                # 处理冲突：选择最近的机器人
+                for task_id, robots in task_assignments.items():
+                    if len(robots) > 1:
+                        # 选择最近的机器人
+                        task = self.tasks_array[task_id]
+                        task_pos = self.sites.sites_pos[task[2]]
+                        closest_robot = min(robots, key=lambda r: np.linalg.norm(
+                            np.array(self.robots.robot_pos[r]) - np.array(task_pos)
+                        ))
+                        robots = [closest_robot]
+                    
+                    # 只计算有效分配
+                    robot_id = robots[0]
+                    task_type = task[3]
+                    task_priority = self.tasks.task_priority[task_type]
+                    service_coff = self.robots.get_skills_coff(robot_id)[task_type-1] if task_type>0 else self.robots.get_skills_coff(robot_id)[3]
+
+                    valid_assignments += 1
+                    total_priority += task_priority
+                    total_efficiency += service_coff
+                if valid_assignments < 1:
+                    return 0
+                # 适应度函数：最大化 任务数分配、优先级、完成效率
+                return (valid_assignments * 1.0 + 
+                        (total_priority - 1)/valid_assignments * 1.5 + 
+                        (total_efficiency - 0.5)/valid_assignments * 2.0)
+            
+            # 5. 遗传算法主循环
+            for generation in range(GENERATIONS):
+                # 评估适应度
+                fitness_scores = [fitness(ind) for ind in population]
+                
+                # 选择精英
+                elite_size = int(POPULATION_SIZE * 0.1)
+                elite_indices = np.argsort(fitness_scores)[-elite_size:]
+                elites = [population[i] for i in elite_indices]
+                
+                # 选择父代（轮盘赌选择）
+                total_fitness = sum(fitness_scores)
+                if total_fitness == 0:
+                    probabilities = [1/len(population)] * len(population)
+                else:
+                    probabilities = [score/total_fitness for score in fitness_scores]
+                
+                parents = random.choices(
+                    population, weights=probabilities, k=POPULATION_SIZE - elite_size
+                )
+                
+                # 交叉操作
+                new_population = elites.copy()
+                for i in range(0, len(parents), 2):
+                    if i+1 >= len(parents):
+                        break
+                    parent1 = parents[i]
+                    parent2 = parents[i+1]
+                    
+                    if num_free_robots > 1 and random.random() < CROSSOVER_RATE:
+                        # 单点交叉
+                        crossover_point = random.randint(1, len(free_robots)-1)
+                        child1 = parent1[:crossover_point] + parent2[crossover_point:]
+                        child2 = parent2[:crossover_point] + parent1[crossover_point:]
+                        new_population.extend([child1, child2])
+                    else:
+                        new_population.extend([parent1, parent2])
+                
+                # 变异操作
+                for i in range(len(new_population)):
+                    if random.random() < MUTATION_RATE:
+                        mutate_idx = random.randint(0, len(free_robots)-1)
+                        robot_id = free_robots[mutate_idx]
+                        avail_actions = self.get_avail_agent_actions(robot_id)
+                        valid_actions = [a for a, avail in enumerate(avail_actions) if avail == 1]
+                        new_population[i][mutate_idx] = random.choice(valid_actions)
+                
+                population = new_population
+            
+            # 6. 选择最佳个体
+            best_individual = max(population, key=fitness)
+            
+            # 7. 构建完整动作列表
+            for idx, action in enumerate(best_individual):
+                robot_id = free_robots[idx]
+                actions[robot_id] = action
+            
+            # 忙碌机器人设为"不执行"
+            for robot_id in range(self.robots.num_robots):
+                if robot_id not in free_robots:
+                    actions[robot_id] = self.task_window_size
+        
         return actions
 
     def step(self, actions, task_priority_reward = False):
