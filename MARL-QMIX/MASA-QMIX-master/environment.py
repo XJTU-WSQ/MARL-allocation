@@ -35,7 +35,7 @@ class ScheduleEnv(gym.Env, ABC):
         self.episode_final_reward = 0  # 新增：记录整个episode的最终奖励
         self.reset()  # 初始化环境
 
-    def reset(self):
+    def reset(self, random_seed=42):
         """
         环境重置，初始化所有参数。
         """
@@ -56,8 +56,9 @@ class ScheduleEnv(gym.Env, ABC):
         self.task_window = [[0 for _ in range(6)] for _ in range(self.task_window_size)]
 
         # 机器人信息初始化
-        self.robots.robot_pos = self.robots.robot_sites_pos
-        random.shuffle(self.robots.robot_pos)
+        self.robots.robot_pos = self.robots.robot_sites_pos.copy()
+        np.random.seed(random_seed) # 设定随机种子，确保同一批次的任务，其机器人的初始随机位置一致
+        np.random.shuffle(self.robots.robot_pos)
         self.robots_state = [0 for _ in range(self.robots.num_robots)] # 机器人状态信息 : 1占用，0空闲
         self.robots_work_times = [0 for _ in range(self.robots.num_robots)]
         self.robots.robots_tasks_info = np.zeros([self.robots.num_robots, 6], dtype=int)
@@ -211,11 +212,11 @@ class ScheduleEnv(gym.Env, ABC):
         observation.append(task_progress)  # 任务进度(0-1)
         observation.extend(robot_type_onehot)  # 机器人类别(one-hot)
 
-        # 2. 添加任务窗口信息（任务信息（x,y,距离，已等待时间, 经验耗时均值，经验耗时标准差）+ 任务类型（one-hot, nums=6））
+        # 2. 添加任务窗口信息（任务信息（x,y,距离，已等待时间, 经验耗时均值，经验耗时标准差，任务优先级）+ 任务类型（one-hot, nums=6））
         task_features = []
         for i, task in enumerate(self.task_window):
             if all(x == 0 for x in task) or avail_action[i] == 0:  # 占位符任务或不可执行
-                task_features.append([0.0]*12)  # 占位符
+                task_features.append([0.0]*13)  # 占位符
             else:
                 [task_index, _, site_id, task_type, destination_id, _] = task
                 if task_type == 2 or task_type == 3:
@@ -233,10 +234,11 @@ class ScheduleEnv(gym.Env, ABC):
                 task_type_features[task_type] = 1
                 mean = self.robots.get_buff_skills_coff_mean(robot_id, task_type)
                 std = self.robots.get_buff_skills_coff_std(robot_id, task_type)
-                task_features.append([task_x, task_y, dis, wait_time, mean, std]+task_type_features)
+                task_priority = self.tasks.task_priority[task_type]
+                task_features.append([task_x, task_y, dis, wait_time, mean, std, task_priority]+task_type_features)
 
         # 填充任务窗口
-        task_features += [[0.0] * 12] * (max_task_window_size - len(task_features))
+        task_features += [[0.0] * 13] * (max_task_window_size - len(task_features))
         for feature in task_features[:max_task_window_size]:
             observation.extend(feature)
 
@@ -271,9 +273,9 @@ class ScheduleEnv(gym.Env, ABC):
                                 other_progress])  # 任务进度(0-1)
             observation.extend(other_type_onehot)  # 类别one-hot
 
-        # observation 270 =
+        # observation 280 =
         #  10 = 5  + 5      -> 当前机器人位置（x,y)，状态，工作时间，机器人任务进度（任务已耗时/预计完成时间）（机器人空闲置0），机器人类别信息（one-hot, nums=5）
-        # 120 = 10 * 12     -> 10 * （任务信息（x,y,距离，已等待时间, 经验耗时均值，经验耗时标准差）+ 任务类型（one-hot, nums=6））
+        # 130 = 10 * 13     -> 10 * （任务信息（x,y,距离，已等待时间, 经验耗时均值，经验耗时标准差，任务优先级）+ 任务类型（one-hot, nums=6））
         # 140 = 14 * (5+5)  -> 其他所有机器人位置（x,y), 状态，工作时间，机器人任务进度（任务已耗时/预计完成时间）（机器人空闲置0），机器人类别信息（one-hot, nums=5）
         return np.array(observation, dtype=np.float32)
 
@@ -305,42 +307,192 @@ class ScheduleEnv(gym.Env, ABC):
                 avail_actions[j] = 0  # 机器人技能不匹配，任务不可选
         return avail_actions
 
-    def assign_tasks_baseline(self):
+    def assign_tasks_baseline(self, baseline_type='random'):
         self.update_task_window()
         self.renew_wait_time()
 
         actions = [-1 for i in range(self.robots.num_robots)]
         robot_ids_list = list(range(self.robots.num_robots))
+        random.shuffle(robot_ids_list)
+        if baseline_type == 'random':
+            # Update the environment's task window and wait times
+            for robot_id in robot_ids_list:
+                available_actions = self.get_avail_agent_actions(robot_id)
 
-        robot_positions = self.robots.robot_pos
-        task_window = self.task_window
+                # Randomly choose a valid action (including "do nothing")
+                valid_actions = [action for action, available in enumerate(available_actions) if available == 1]
+                actions[robot_id] = np.random.choice(valid_actions)
+        elif baseline_type in ['greedy', 'greedy_priority', 'greedy_taskcoff']:
+            robot_positions = self.robots.robot_pos
+            task_window = self.task_window
 
-        # Assign the closest task to each robot
-        for robot_id in robot_ids_list:
-            robot_pos = robot_positions[robot_id]
-            closest_task = None
-            min_distance = float('inf')
+            # Assign the closest task to each robot
+            for robot_id in robot_ids_list:
+                robot_pos = robot_positions[robot_id]
+                closest_task = None
+                min_distance = float('inf')
 
-            # Get available actions for the robot
-            available_actions = self.get_avail_agent_actions(robot_id)
+                # Get available actions for the robot
+                available_actions = self.get_avail_agent_actions(robot_id)
 
-            # Iterate through the task window to find the closest task
-            for task_index, task in enumerate(task_window):
-                if available_actions[task_index] == 0:  # Skip if the task is not executable
-                    continue
+                # Iterate through the task window to find the closest task
+                for task_index, task in enumerate(task_window):
+                    if available_actions[task_index] == 0:  # Skip if the task is not executable
+                        continue
+                    
+                    task_pos = self.sites.sites_pos[task[2]]
+                    distance = np.linalg.norm(np.array(robot_pos) - np.array(task_pos))
+                    if baseline_type == 'greedy_priority': # 增加baseline：考虑优先级的贪婪算法
+                        task_priority = self.tasks.task_priority[task[3]]
+                        distance = distance/task_priority
+                    if baseline_type == 'greedy_taskcoff': # 增加baseline：考虑任务能力系数的贪婪算法
+                        service_coff = self.robots.get_task_service_coff(robot_id, task[3])
+                        distance = distance/service_coff
+                    # Update the closest task
+                    if distance < min_distance:
+                        closest_task = task_index
+                        min_distance = distance
+                # If no suitable task is found, choose the "do nothing" action
+                actions[robot_id] = closest_task if closest_task is not None else len(task_window)
+        
+        elif baseline_type == 'genetic': # 新增遗传算法实现
+            # 1. 获取空闲机器人
+            free_robots = [r for r in robot_ids_list if self.robots_state[r] == 0]
+            num_free_robots = len(free_robots)
+            
+            if num_free_robots == 0:
+                return [self.task_window_size] * self.robots.num_robots
+            
+            # 2. 遗传算法参数 种群大小：30  迭代次数：50  交叉率：80%  变异率：10%
+            POPULATION_SIZE = 30
+            GENERATIONS = 50
+            MUTATION_RATE = 0.1
+            CROSSOVER_RATE = 0.8
+            
+            # 3. 初始化种群
+            def create_individual():
+                individual = []
+                for robot_id in free_robots:
+                    avail_actions = self.get_avail_agent_actions(robot_id)
+                    valid_actions = [a for a, avail in enumerate(avail_actions) if avail == 1]
+                    individual.append(random.choice(valid_actions))
+                return individual
+            
+            population = [create_individual() for _ in range(POPULATION_SIZE)]
+            
+            # 4. 适应度函数
+            def fitness(individual):
+                # 模拟分配结果
+                task_assignments = {}
+                for idx, action in enumerate(individual):
+                    robot_id = free_robots[idx]
+                    if action < self.task_window_size:  # 有效任务分配
+                        task = self.task_window[action]
+                        task_id = task[0]
+                        
+                        # 记录任务分配
+                        if task_id not in task_assignments:
+                            task_assignments[task_id] = []
+                        task_assignments[task_id].append(robot_id)
+                
+                # 计算有效分配数量
+                valid_assignments = 0
+                total_priority = 0
+                total_efficiency = 0
+                total_distance = 0
+                
+                # 处理冲突：选择最近的机器人
+                for task_id, robots in task_assignments.items():
+                    if len(robots) > 1:
+                        # 选择最近的机器人
+                        task = self.tasks_array[task_id]
+                        task_pos = self.sites.sites_pos[task[2]]
+                        closest_robot = min(robots, key=lambda r: np.linalg.norm(
+                            np.array(self.robots.robot_pos[r]) - np.array(task_pos)
+                        ))
+                        robots = [closest_robot]
+                    
+                    # 只计算有效分配
+                    robot_id = robots[0]
+                    task_type = task[3]
+                    task_priority = self.tasks.task_priority[task_type]
+                    service_coff = self.robots.get_task_service_coff(robot_id, task_type)
 
-                task_pos = self.sites.sites_pos[task[2]]
-                distance = np.linalg.norm(np.array(robot_pos) - np.array(task_pos))
-
-                # Update the closest task
-                if distance < min_distance:
-                    closest_task = task_index
-                    min_distance = distance
-            # If no suitable task is found, choose the "do nothing" action
-            actions[robot_id] = closest_task if closest_task is not None else len(task_window)
+                    valid_assignments += 1
+                    total_priority += task_priority
+                    total_efficiency += service_coff
+                if valid_assignments < 1:
+                    return 0
+                # 适应度函数：最大化 任务数分配、优先级、完成效率
+                return (valid_assignments * 1.0 + 
+                        (total_priority - 1)/valid_assignments * 1.5 + 
+                        (total_efficiency - 0.5)/valid_assignments * 2.0)
+            
+            # 5. 遗传算法主循环
+            for generation in range(GENERATIONS):
+                # 评估适应度
+                fitness_scores = [fitness(ind) for ind in population]
+                
+                # 选择精英
+                elite_size = int(POPULATION_SIZE * 0.1)
+                elite_indices = np.argsort(fitness_scores)[-elite_size:]
+                elites = [population[i] for i in elite_indices]
+                
+                # 选择父代（轮盘赌选择）
+                total_fitness = sum(fitness_scores)
+                if total_fitness == 0:
+                    probabilities = [1/len(population)] * len(population)
+                else:
+                    probabilities = [score/total_fitness for score in fitness_scores]
+                
+                parents = random.choices(
+                    population, weights=probabilities, k=POPULATION_SIZE - elite_size
+                )
+                
+                # 交叉操作
+                new_population = elites.copy()
+                for i in range(0, len(parents), 2):
+                    if i+1 >= len(parents):
+                        break
+                    parent1 = parents[i]
+                    parent2 = parents[i+1]
+                    
+                    if num_free_robots > 1 and random.random() < CROSSOVER_RATE:
+                        # 单点交叉
+                        crossover_point = random.randint(1, len(free_robots)-1)
+                        child1 = parent1[:crossover_point] + parent2[crossover_point:]
+                        child2 = parent2[:crossover_point] + parent1[crossover_point:]
+                        new_population.extend([child1, child2])
+                    else:
+                        new_population.extend([parent1, parent2])
+                
+                # 变异操作
+                for i in range(len(new_population)):
+                    if random.random() < MUTATION_RATE:
+                        mutate_idx = random.randint(0, len(free_robots)-1)
+                        robot_id = free_robots[mutate_idx]
+                        avail_actions = self.get_avail_agent_actions(robot_id)
+                        valid_actions = [a for a, avail in enumerate(avail_actions) if avail == 1]
+                        new_population[i][mutate_idx] = random.choice(valid_actions)
+                
+                population = new_population
+            
+            # 6. 选择最佳个体
+            best_individual = max(population, key=fitness)
+            
+            # 7. 构建完整动作列表
+            for idx, action in enumerate(best_individual):
+                robot_id = free_robots[idx]
+                actions[robot_id] = action
+            
+            # 忙碌机器人设为"不执行"
+            for robot_id in range(self.robots.num_robots):
+                if robot_id not in free_robots:
+                    actions[robot_id] = self.task_window_size
+        
         return actions
 
-    def step(self, actions):
+    def step(self, actions, task_priority_reward = False):
         """
         执行智能体的动作，更新环境状态，并计算综合奖励。
         """
@@ -349,6 +501,8 @@ class ScheduleEnv(gym.Env, ABC):
         conflict_penalty = 0
         total_service_cost_penalty = 0
         service_coff_list = []
+        task_priority_list = []
+
         freeze_dict = {
             'robots_state': self.robots_state.copy(),
             'robots_work_times': self.robots_work_times,
@@ -394,6 +548,7 @@ class ScheduleEnv(gym.Env, ABC):
                                        self.time_on_road[task_index] +
                                        self.service_time[task_index])
                     self.completed_tasks_time.append(completion_time)
+                    task_priority_list.append(self.tasks.task_priority[task_info[3]])
 
         # 遍历所有机器人动作，分配任务并记录任务分配
         for robot_id, action in enumerate(actions):
@@ -464,18 +619,22 @@ class ScheduleEnv(gym.Env, ABC):
                 normalized_time = completion_time / 1000  # 假设最大完成时间为1800秒(30分钟)
                 new_completed_time_penalty -= 1.5 * normalized_time  # 最大惩罚-1.5
 
+        if task_priority_reward and len(task_priority_list)>0:
+            avg_task_priority = np.mean(task_priority_list)
+        else:
+            avg_task_priority = 1
         # ===== 重构奖励组件 =====
         # 1. 分配奖励：鼓励分配任务
         allocation_reward = 0.5 * shift_allocated_num
 
         # 2. 完成奖励：鼓励完成任务（主要目标）
-        completion_reward = 2.0 * shift_completed_num
+        completion_reward = 2.0 * shift_completed_num * avg_task_priority
 
         # 3. 效率奖励：与服务系数挂钩
         efficiency_reward = np.mean(service_coff_list) if service_coff_list else 0
 
         # 4. 时间惩罚：仅对新完成的任务
-        time_penalty = new_completed_time_penalty
+        time_penalty = new_completed_time_penalty * avg_task_priority
 
         # 5. 等待惩罚：惩罚未分配任务
         wait_penalty = -0.01 * len(self.unallocated_tasks)
@@ -495,6 +654,7 @@ class ScheduleEnv(gym.Env, ABC):
             "efficiency": efficiency_reward,
             "time_penalty": time_penalty,
             "wait_penalty": wait_penalty,
+            "avg_task_priority": avg_task_priority,
             "immediate": immediate_reward
         }
 
@@ -520,7 +680,11 @@ class ScheduleEnv(gym.Env, ABC):
 
             # 2. 时间效率奖励（次要目标）
             if sum(self.tasks_completed) > 0:
-                avg_completion_time = sum(self.completed_tasks_time) / sum(self.tasks_completed)
+                if task_priority_reward:
+                    task_priority_weight = [task_info[3] for task_info in self.tasks_array]
+                    avg_completion_time = sum(time * weight for time, weight in zip(self.completed_tasks_time, task_priority_weight)) / sum(task_priority_weight)
+                else:
+                    avg_completion_time = sum(self.completed_tasks_time) / sum(self.tasks_completed)
                 # 时间奖励函数：指数衰减奖励
                 time_bonus = 300 * math.exp(-0.005 * avg_completion_time) * task_density  # 每增加100秒，奖励减半
             else:

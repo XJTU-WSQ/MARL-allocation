@@ -11,4 +11,4 @@ class Tasks:
             [0, 0, 0, 1, 0],    # 4 情感陪护
             [0, 0, 0, 0, 1]     # 5 康复训练
         ]
-        self.task_priority = [1, 2, 2, 2, 2, 3]
+        self.task_priority = [5, 2, 1, 1, 2, 1]

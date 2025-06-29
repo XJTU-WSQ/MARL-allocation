@@ -21,6 +21,7 @@ def get_common_args():
     parser.add_argument('--map', type=str, default="Schedule250624", help='map name') # 仅用于模型存储路径
     parser.add_argument('--log_step_data', type=bool, default=False, help='Log step data for debugging')
     parser.add_argument("--use_tensorboard", type=bool, default=True, help="Enable TensorBoard logging")
+    parser.add_argument("--task_priority_reward", type=bool, default=True, help="Enable reward with task_priority weight")
     parser.add_argument("--run_name", type=str, default="default_run", help="Name of the current run") # 仅用于tensorboard任务标识 
     args = parser.parse_args()
     return args

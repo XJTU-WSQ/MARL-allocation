@@ -101,6 +101,10 @@ class Robots:
         if robot_type_id == 4:
             return [0.6, 0.1, 0.1, 1, 1.2]   # 类型 4：辅助行走机器人
 
+    def get_task_service_coff(self, agent_id, task_type):
+        # 针对特定机器人和特定任务，返回具体的能力系数（除了紧急任务，任务系数与能力系数是一一对应的）
+        return self.get_skills_coff(agent_id)[task_type-1] if task_type>0 else self.get_skills_coff(agent_id)[3]
+
     def get_buff_skills_coff_mean(self, agent_id, task_id):
         """获取技能系数（经验均值）"""
         return self.skill_buffers[agent_id][task_id]['mean']
@@ -117,6 +121,7 @@ class Robots:
         return math.sqrt(buffer_info.get('M2', 0.0) / (count - 1))
 
     def save_buff_skills(self, agent_id, task_id, task_times):
+        task_times = task_times
         buffer_info = self.skill_buffers[agent_id][task_id]
         # 获取当前统计信息
         count = buffer_info['count']
@@ -142,8 +147,8 @@ class Robots:
     def execute_task(self, robot_id, task):
         # 机器人的任务信息：
         [task_index, requests_time, site_id, task_id, destination_id, service_time] = task
-        # 根据能力系数计算实际服务时长
-        service_coff = self.get_skills_coff(robot_id)[task_id - 1]
+        # 根据能力系数计算实际服务时长(临时处理， 兼容紧急任务的情况)
+        service_coff = self.get_task_service_coff(robot_id, task_id)
         real_service_time = np.ceil(service_time/service_coff)
 
         # 机器人的类型和速度

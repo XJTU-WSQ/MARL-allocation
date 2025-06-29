@@ -2,6 +2,7 @@ import copy
 import json
 import math
 import random
+import hashlib
 import numpy as np
 from task import task_generator
 from loguru import logger
@@ -16,6 +17,7 @@ class RolloutWorker:
         self.n_agents = args.n_agents
         self.state_shape = args.state_shape
         self.obs_shape = args.obs_shape
+        self.task_priority_reward = args.task_priority_reward
         self.args = args
 
         self.epsilon = args.max_epsilon
@@ -29,7 +31,6 @@ class RolloutWorker:
                          tasks=None, task_type='qmix', evalue_epsilon=0):
         # 如果提供了固定任务集，则使用，否则生成新任务
         global total_greedy_completion_time, total_greedy_completed_num
-        global fixed_initial_pos
         if tasks is not None:
             self.env.tasks_array = tasks
         elif evaluate:
@@ -41,15 +42,8 @@ class RolloutWorker:
         if self.args.replay_dir != '' and evaluate and episode_num == 0:  # prepare for save replay of evaluation
             self.env.close()
         o, u, r, s, avail_u, u_onehot, terminate, padded = [], [], [], [], [], [], [], []
-        self.env.reset()
-
-        if task_type == 'qmix':
-            # 保存初始位置到实例变量
-            fixed_initial_pos = copy.deepcopy(self.env.robots.robot_pos)
-        # === 关键修改：其他算法使用保存的位置 ===
-        # 对于其他算法，且任务集相同（tasks不为None），使用保存的位置
-        if task_type != 'qmix' and tasks is not None and hasattr(self, 'fixed_initial_pos'):
-            self.env.robots.robot_pos = copy.deepcopy(fixed_initial_pos)
+        seed = int(hashlib.sha256(str(tasks).encode()).hexdigest(), 16) % (2**32) # 根据tasks的哈希值构建随机种子
+        self.env.reset(random_seed = seed)
 
         terminated = False
         step = 0
@@ -75,13 +69,14 @@ class RolloutWorker:
         max_wait_time = 0  # 最长等待时间
         avg_service_coff = 0  # 平均服务系数
         all_reward_components = []  # 存储所有步骤的奖励组成
-
+        
         while not terminated and step < self.episode_limit:
 
             self.env.update_task_window()
             self.env.renew_wait_time()
             obs = self.env.get_obs()
             state = self.env.get_state()
+            reward_weight = [] # 存储本次迭代中的任务优先级属性
 
             avail_actions = [self.env.get_avail_agent_actions(agent_id) for agent_id in range(self.n_agents)]
             actions = self.agents.choose_actions_batch(obs, avail_actions, epsilon)
@@ -91,10 +86,12 @@ class RolloutWorker:
                 action_onehot[action] = 1
                 actions_onehot.append(action_onehot)
             if task_type == 'qmix':
-                reward, terminated, info = self.env.step(actions)
-            elif task_type == 'greedy':
-                greedy_actions = self.env.assign_tasks_baseline()
-                reward, terminated, info = self.env.step(greedy_actions)
+                reward, terminated, info = self.env.step(actions, task_priority_reward = self.task_priority_reward)
+            elif task_type in ['random','greedy','greedy_priority','greedy_taskcoff','genetic']:
+                greedy_actions = self.env.assign_tasks_baseline(baseline_type=task_type)
+                reward, terminated, info = self.env.step(greedy_actions, task_priority_reward = self.task_priority_reward)
+            else:
+                logger.error(f'wrong args in generate_episode with task_type={task_type}')
             # 记录奖励组成
             all_reward_components.append(info["reward_components"])
             stats_dict[step] = info
@@ -133,7 +130,6 @@ class RolloutWorker:
                 # 改为平方衰减探索率
                 progress = min(1.0, self.current_step / self.anneal_steps)
                 epsilon = self.min_epsilon + (self.max_epsilon - self.min_epsilon) * ((1 - progress)**2)
-
         # === 在循环结束后添加统计量计算 ===
         total_allocated_num = sum(self.env.tasks_allocated)
         total_completed_num = sum(self.env.tasks_completed)

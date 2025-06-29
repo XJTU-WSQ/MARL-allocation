@@ -20,7 +20,11 @@ Thumbs.db
 # IDE配置
 .idea/
 .vscode/
+.env
 
 # Python缓存
 __pycache__/
 *.py[cod]
+
+# 其他冗余备份
+runs_back*
